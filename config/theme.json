@@ -1,0 +1,29 @@
+{
+    "colors": {
+        "primary": {
+            "main": "#2196F3",
+            "light": "#64B5F6",
+            "dark": "#1976D2"
+        },
+        "secondary": {
+            "main": "#FF4081",
+            "light": "#FF80AB",
+            "dark": "#C51162"
+        },
+        "background": {
+            "default": "#FFFFFF",
+            "paper": "#F5F5F5"
+        },
+        "text": {
+            "primary": "#212121",
+            "secondary": "#757575"
+        }
+    },
+    "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 32
+    }
+}

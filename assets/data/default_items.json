@@ -1,0 +1,25 @@
+{
+    "items": [
+        {
+            "id": "1",
+            "name": "Milk",
+            "category_id": "1",
+            "unit": "liter",
+            "default_quantity": 1
+        },
+        {
+            "id": "2",
+            "name": "Bread",
+            "category_id": "1",
+            "unit": "piece",
+            "default_quantity": 1
+        },
+        {
+            "id": "3",
+            "name": "Paper Towels",
+            "category_id": "2",
+            "unit": "pack",
+            "default_quantity": 1
+        }
+    ]
+}

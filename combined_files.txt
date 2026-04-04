@@ -1,0 +1,6019 @@
+## Caminho: ./main.py
+import kivy
+kivy.require('2.1.0')
+
+from app.shopping_app import ShoppingApp
+
+if __name__ == '__main__':
+    shopping_app = ShoppingApp()
+    shopping_app.run()
+
+
+## Caminho: api/client.py
+from kivy.event import EventDispatcher
+from endpoints.lists import ListEndpoints
+from endpoints.users import UserEndpoints
+
+class APIClient(EventDispatcher):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_client()
+        
+    def _setup_client(self):
+        self.lists = ListEndpoints()
+        self.users = UserEndpoints()
+        self.headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+        }
+
+
+## Caminho: api/endpoints/lists.py
+from kivy.network.urlrequest import UrlRequest
+from kivy.event import EventDispatcher
+
+class ListEndpoints(EventDispatcher):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.base_url = 'https://api.shoppinglist.com/v1'
+        
+    def get_lists(self, user_id):
+        endpoint = f'{self.base_url}/lists'
+        return UrlRequest(
+            endpoint,
+            method='GET',
+            req_headers={'User-Id': user_id}
+        )
+
+
+## Caminho: api/endpoints/users.py
+from kivy.network.urlrequest import UrlRequest
+from kivy.event import EventDispatcher
+
+class UserEndpoints(EventDispatcher):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.base_url = 'https://api.shoppinglist.com/v1'
+        
+    def get_user_profile(self, user_id):
+        endpoint = f'{self.base_url}/users/{user_id}'
+        return UrlRequest(
+            endpoint,
+            method='GET',
+            req_headers={'Authorization': self._get_auth_token()}
+        )
+
+
+## Caminho: app/app_builder.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty
+from screens.common.screen_manager import AppScreenManager
+from screens.common.navigation import Navigation
+
+class AppBuilder(EventDispatcher):
+    screen_manager = ObjectProperty(None)
+    navigation = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_builder()
+        
+    def _setup_builder(self):
+        self.screens = {
+            'main': self._build_main_screen,
+            'shopping_list': self._build_list_screen,
+            'categories': self._build_categories_screen,
+            'settings': self._build_settings_screen
+        }
+
+
+## Caminho: app/app_config.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+import json
+import os
+
+class AppConfig(EventDispatcher):
+    settings = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_config()
+        
+    def _setup_config(self):
+        self.config_files = {
+            'settings': 'config/settings.json',
+            'routes': 'config/routes.json',
+            'theme': 'config/theme.json'
+        }
+        
+    def load_settings(self):
+        for config_type, file_path in self.config_files.items():
+            if os.path.exists(file_path):
+                with open(file_path, 'r') as f:
+                    self.settings[config_type] = json.load(f)
+
+
+## Caminho: app/config.py
+from pathlib import Path
+
+# Application Settings
+APP_NAME = "Shopping List"
+APP_VERSION = "1.0.0"
+DEBUG = True
+
+# Paths
+BASE_DIR = Path(__file__).parent.parent
+DATA_DIR = BASE_DIR / "data"
+
+# UI Settings
+WINDOW_CONFIG = {
+    'minimum_width': 300,
+    'minimum_height': 500,
+    'default_width': 400,
+    'default_height': 600,
+    'resizable': True
+}
+
+# Theme Colors
+COLORS = {
+    'primary': '#2196F3',
+    'secondary': '#FF9800',
+    'success': '#4CAF50',
+    'warning': '#FFC107',
+    'error': '#F44336',
+    'background': '#FFFFFF',
+    'text': '#000000'
+}
+
+# Database Settings
+DB_CONFIG = {
+    'type': 'sqlite',
+    'name': 'shopping_list.db',
+    'path': DATA_DIR
+}
+
+# Platform specific settings
+PLATFORM_SETTINGS = {
+    'android': {
+        'font_size': 18,
+        'touch_target': 48
+    },
+    'desktop': {
+        'font_size': 14,
+        'touch_target': 32
+    }
+}
+
+
+## Caminho: app/shopping_app.py
+from kivy.app import App
+from kivy.properties import ObjectProperty
+from app_config import AppConfig
+from app_builder import AppBuilder
+
+class ShoppingApp(App):
+    config = ObjectProperty(None)
+    builder = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_app()
+        
+    def _setup_app(self):
+        self.config = AppConfig()
+        self.builder = AppBuilder()
+        
+    def build(self):
+        return self.builder.build_app()
+        
+    def on_start(self):
+        self.config.load_settings()
+        
+    def on_stop(self):
+        self.config.save_settings()
+
+
+## Caminho: assets/data/categories.json
+{
+    "categories": [
+        {
+            "id": "1",
+            "name": "Groceries",
+            "icon": "grocery",
+            "color": "#4CAF50"
+        },
+        {
+            "id": "2",
+            "name": "Household",
+            "icon": "home",
+            "color": "#2196F3"
+        },
+        {
+            "id": "3",
+            "name": "Electronics",
+            "icon": "devices",
+            "color": "#9C27B0"
+        }
+    ]
+}
+
+
+## Caminho: assets/data/default_items.json
+{
+    "items": [
+        {
+            "id": "1",
+            "name": "Milk",
+            "category_id": "1",
+            "unit": "liter",
+            "default_quantity": 1
+        },
+        {
+            "id": "2",
+            "name": "Bread",
+            "category_id": "1",
+            "unit": "piece",
+            "default_quantity": 1
+        },
+        {
+            "id": "3",
+            "name": "Paper Towels",
+            "category_id": "2",
+            "unit": "pack",
+            "default_quantity": 1
+        }
+    ]
+}
+
+
+## Caminho: config/routes.json
+{
+    "screens": {
+        "main": {
+            "name": "Main",
+            "route": "/",
+            "icon": "home"
+        },
+        "shopping_list": {
+            "name": "Shopping Lists",
+            "route": "/lists",
+            "icon": "list"
+        },
+        "categories": {
+            "name": "Categories",
+            "route": "/categories",
+            "icon": "folder"
+        },
+        "settings": {
+            "name": "Settings",
+            "route": "/settings",
+            "icon": "settings"
+        }
+    }
+}
+
+
+## Caminho: config/settings.json
+{
+    "app": {
+        "name": "Shopping List Pro",
+        "version": "1.0.0",
+        "theme": "light",
+        "language": "en",
+        "first_run": true
+    },
+    "display": {
+        "font_size": "medium",
+        "color_scheme": "default",
+        "animations": true
+    },
+    "storage": {
+        "auto_save": true,
+        "backup_enabled": true,
+        "sync_frequency": "daily"
+    }
+}
+
+
+## Caminho: config/theme.json
+{
+    "colors": {
+        "primary": {
+            "main": "#2196F3",
+            "light": "#64B5F6",
+            "dark": "#1976D2"
+        },
+        "secondary": {
+            "main": "#FF4081",
+            "light": "#FF80AB",
+            "dark": "#C51162"
+        },
+        "background": {
+            "default": "#FFFFFF",
+            "paper": "#F5F5F5"
+        },
+        "text": {
+            "primary": "#212121",
+            "secondary": "#757575"
+        }
+    },
+    "spacing": {
+        "xs": 4,
+        "sm": 8,
+        "md": 16,
+        "lg": 24,
+        "xl": 32
+    }
+}
+
+
+## Caminho: controllers/base_controller.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty
+
+class BaseController(EventDispatcher):
+    db_manager = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_controller()
+        
+    def _setup_controller(self):
+        self.actions = {
+            'create': self._create,
+            'read': self._read,
+            'update': self._update,
+            'delete': self._delete
+        }
+        
+    def execute_action(self, action_type, data):
+        if action_type in self.actions:
+            return self.actions[action_type](data)
+        return False
+        
+    def validate_data(self, data):
+        return True
+
+
+## Caminho: controllers/category_controller.py
+from base_controller import BaseController
+from kivy.properties import ListProperty, DictProperty
+
+class CategoryController(BaseController):
+    categories = ListProperty([])
+    category_hierarchy = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_category_controller()
+        
+    def _setup_category_controller(self):
+        self.category_actions = {
+            'create_category': self.create_category,
+            'update_category': self.update_category,
+            'delete_category': self.delete_category,
+            'assign_items': self.assign_items,
+            'reorder_categories': self.reorder_categories
+        }
+        
+    def create_category(self, category_data):
+        if self.validate_category_data(category_data):
+            new_category = self._create_category_object(category_data)
+            self.categories.append(new_category)
+            return new_category
+        return None
+
+
+## Caminho: controllers/item_controller.py
+from base_controller import BaseController
+from kivy.properties import ObjectProperty, DictProperty
+
+class UserController(BaseController):
+    current_user = ObjectProperty(None)
+    user_preferences = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_user_controller()
+        
+    def _setup_user_controller(self):
+        self.user_actions = {
+            'login': self.login_user,
+            'logout': self.logout_user,
+            'update_profile': self.update_profile,
+            'change_preferences': self.change_preferences,
+            'sync_data': self.sync_user_data
+        }
+        
+    def login_user(self, credentials):
+        if self.validate_credentials(credentials):
+            user = self._authenticate_user(credentials)
+            if user:
+                self.current_user = user
+                return True
+        return False
+
+
+## Caminho: controllers/list_controller.py
+from base_controller import BaseController
+from kivy.properties import ListProperty, DictProperty
+
+class ListController(BaseController):
+    active_lists = ListProperty([])
+    list_cache = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_list_controller()
+        
+    def _setup_list_controller(self):
+        self.list_actions = {
+            'create_list': self.create_list,
+            'update_list': self.update_list,
+            'delete_list': self.delete_list,
+            'share_list': self.share_list,
+            'add_item': self.add_item,
+            'remove_item': self.remove_item
+        }
+        
+    def create_list(self, list_data):
+        if self.validate_list_data(list_data):
+            new_list = self._create_list_object(list_data)
+            self.active_lists.append(new_list)
+            return new_list
+        return None
+
+
+## Caminho: controllers/user_controller.py
+from base_controller import BaseController
+from kivy.properties import ObjectProperty, DictProperty
+
+class UserController(BaseController):
+    current_user = ObjectProperty(None)
+    user_preferences = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_user_controller()
+        
+    def _setup_user_controller(self):
+        self.user_actions = {
+            'login': self.login_user,
+            'logout': self.logout_user,
+            'update_profile': self.update_profile,
+            'change_preferences': self.change_preferences,
+            'sync_data': self.sync_user_data
+        }
+        
+    def login_user(self, credentials):
+        if self.validate_credentials(credentials):
+            user = self._authenticate_user(credentials)
+            if user:
+                self.current_user = user
+                return True
+        return False
+
+
+## Caminho: core/app_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty, BooleanProperty
+
+class AppManager(EventDispatcher):
+    is_initialized = BooleanProperty(False)
+    current_state = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_managers()
+        
+    def _setup_managers(self):
+        self.managers = {
+            'settings': SettingsManager(),
+            'resources': ResourceManager(),
+            'errors': ErrorHandler(),
+            'logger': Logger(),
+            'cache': CacheManager()
+        }
+        
+    def initialize_app(self):
+        for manager in self.managers.values():
+            manager.initialize()
+        self.is_initialized = True
+
+
+## Caminho: core/cache_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, NumericProperty
+from datetime import datetime, timedelta
+
+class CacheManager(EventDispatcher):
+    cache = DictProperty({})
+    cache_size = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_cache()
+        
+    def _setup_cache(self):
+        self.cache_types = {
+            'memory': {'max_size': 100, 'ttl': 3600},
+            'disk': {'max_size': 1000, 'ttl': 86400},
+            'session': {'max_size': 50, 'ttl': None}
+        }
+        
+    def set_cache(self, key, value, cache_type='memory'):
+        if cache_type in self.cache_types:
+            self.cache[key] = {
+                'value': value,
+                'type': cache_type,
+                'timestamp': datetime.now()
+            }
+
+
+## Caminho: core/error_handler.py
+from kivy.event import EventDispatcher
+from kivy.properties import ListProperty, DictProperty
+
+class ErrorHandler(EventDispatcher):
+    error_log = ListProperty([])
+    error_types = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_error_handler()
+        
+    def _setup_error_handler(self):
+        self.error_types = {
+            'validation': self._handle_validation_error,
+            'database': self._handle_database_error,
+            'network': self._handle_network_error,
+            'runtime': self._handle_runtime_error,
+            'user': self._handle_user_error
+        }
+        
+    def handle_error(self, error_type, error_data):
+        if error_type in self.error_types:
+            self.error_types[error_type](error_data)
+            self._log_error(error_type, error_data)
+
+
+## Caminho: core/logger.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+from datetime import datetime
+
+class Logger(EventDispatcher):
+    log_entries = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_logger()
+        
+    def _setup_logger(self):
+        self.log_levels = {
+            'debug': self._log_debug,
+            'info': self._log_info,
+            'warning': self._log_warning,
+            'error': self._log_error,
+            'critical': self._log_critical
+        }
+        
+    def log(self, level, message, context=None):
+        timestamp = datetime.now().isoformat()
+        if level in self.log_levels:
+            self.log_levels[level](timestamp, message, context)
+
+
+## Caminho: core/resource_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, ListProperty
+
+class ResourceManager(EventDispatcher):
+    resources = DictProperty({})
+    loaded_assets = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_resources()
+        
+    def _setup_resources(self):
+        self.resource_types = {
+            'images': {
+                'path': 'assets/images/',
+                'extensions': ['.png', '.jpg', '.webp']
+            },
+            'icons': {
+                'path': 'assets/icons/',
+                'extensions': ['.png', '.svg']
+            },
+            'fonts': {
+                'path': 'assets/fonts/',
+                'extensions': ['.ttf', '.otf']
+            },
+            'data': {
+                'path': 'assets/data/',
+                'extensions': ['.json', '.yaml']
+            }
+        }
+
+
+## Caminho: core/settings_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, StringProperty
+
+class SettingsManager(EventDispatcher):
+    settings = DictProperty({})
+    current_locale = StringProperty('en')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_settings()
+        
+    def _setup_settings(self):
+        self.settings = {
+            'app': {
+                'theme': 'light',
+                'language': 'en',
+                'currency': 'USD',
+                'notifications': True
+            },
+            'display': {
+                'font_size': 'medium',
+                'color_scheme': 'default',
+                'animations': True
+            },
+            'storage': {
+                'auto_save': True,
+                'backup_enabled': True,
+                'sync_frequency': 'daily'
+            }
+        }
+
+
+## Caminho: database/db_config.py
+from kivy.properties import DictProperty
+from kivy.event import EventDispatcher
+
+class DatabaseConfig(EventDispatcher):
+    config = DictProperty({
+        'database': 'shopping_list.db',
+        'version': '1.0',
+        'tables': {
+            'users': {
+                'columns': [
+                    ('id', 'TEXT PRIMARY KEY'),
+                    ('username', 'TEXT NOT NULL'),
+                    ('email', 'TEXT UNIQUE'),
+                    ('preferences', 'TEXT'),
+                    ('created_at', 'TEXT'),
+                    ('updated_at', 'TEXT')
+                ]
+            },
+            'lists': {
+                'columns': [
+                    ('id', 'TEXT PRIMARY KEY'),
+                    ('name', 'TEXT NOT NULL'),
+                    ('owner_id', 'TEXT'),
+                    ('items', 'TEXT'),
+                    ('created_at', 'TEXT'),
+                    ('updated_at', 'TEXT')
+                ]
+            }
+        }
+    })
+
+
+## Caminho: database/db_manager.py
+import sqlite3
+from kivy.event import EventDispatcher
+from db_config import DatabaseConfig
+
+class DatabaseManager(EventDispatcher):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.config = DatabaseConfig()
+        self.connection = None
+        self._initialize_database()
+        
+    def _initialize_database(self):
+        self.connection = sqlite3.connect(self.config.config['database'])
+        self._create_tables()
+        
+    def _create_tables(self):
+        cursor = self.connection.cursor()
+        for table_name, table_info in self.config.config['tables'].items():
+            columns = ', '.join([f"{col[0]} {col[1]}" for col in table_info['columns']])
+            query = f"CREATE TABLE IF NOT EXISTS {table_name} ({columns})"
+            cursor.execute(query)
+        self.connection.commit()
+        
+    def execute_query(self, query, params=None):
+        cursor = self.connection.cursor()
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
+        self.connection.commit()
+        return cursor
+
+
+## Caminho: database/db_migrations.py
+from kivy.event import EventDispatcher
+from kivy.properties import ListProperty, StringProperty
+
+class DatabaseMigrations(EventDispatcher):
+    migrations = ListProperty([])
+    current_version = StringProperty('1.0')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_migrations()
+        
+    def _setup_migrations(self):
+        self.migrations = [
+            {
+                'version': '1.0',
+                'up': [
+                    """
+                    CREATE TABLE IF NOT EXISTS migrations (
+                        version TEXT PRIMARY KEY,
+                        applied_at TEXT
+                    )
+                    """
+                ],
+                'down': [
+                    "DROP TABLE IF EXISTS migrations"
+                ]
+            },
+            {
+                'version': '1.1',
+                'up': [
+                    """
+                    ALTER TABLE users 
+                    ADD COLUMN last_login TEXT
+                    """
+                ],
+                'down': [
+                    """
+                    ALTER TABLE users 
+                    DROP COLUMN last_login
+                    """
+                ]
+            }
+        ]
+
+
+## Caminho: database/db_queries.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+
+class DatabaseQueries(EventDispatcher):
+    queries = DictProperty({
+        'users': {
+            'create': """
+                INSERT INTO users (id, username, email, preferences, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            'get': "SELECT * FROM users WHERE id = ?",
+            'update': """
+                UPDATE users 
+                SET username = ?, email = ?, preferences = ?, updated_at = ?
+                WHERE id = ?
+            """,
+            'delete': "DELETE FROM users WHERE id = ?"
+        },
+        'lists': {
+            'create': """
+                INSERT INTO lists (id, name, owner_id, items, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            'get': "SELECT * FROM lists WHERE id = ?",
+            'update': """
+                UPDATE lists 
+                SET name = ?, items = ?, updated_at = ?
+                WHERE id = ?
+            """,
+            'delete': "DELETE FROM lists WHERE id = ?"
+        }
+    })
+
+
+## Caminho: features/categories/category_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import ListProperty, DictProperty
+
+class CategoryManager(EventDispatcher):
+    categories = ListProperty([])
+    category_map = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_manager()
+        
+    def _setup_manager(self):
+        self.operations = {
+            'create': self._create_category,
+            'update': self._update_category,
+            'delete': self._delete_category
+        }
+
+
+## Caminho: features/categories/category_organizer.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, BooleanProperty
+
+class CategoryOrganizer(EventDispatcher):
+    hierarchy = DictProperty({})
+    is_sorting = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_organizer()
+        
+    def _setup_organizer(self):
+        self.sort_methods = {
+            'alphabetical': self._sort_alphabetically,
+            'usage': self._sort_by_usage,
+            'custom': self._sort_custom_order
+        }
+
+
+## Caminho: features/items/item_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import ListProperty, NumericProperty
+
+class ItemManager(EventDispatcher):
+    items = ListProperty([])
+    total_count = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_manager()
+        
+    def _setup_manager(self):
+        self.operations = {
+            'add': self._add_item,
+            'remove': self._remove_item,
+            'update': self._update_item,
+            'search': self._search_items
+        }
+
+
+## Caminho: features/items/item_tracker.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, BooleanProperty
+
+class ItemTracker(EventDispatcher):
+    tracking_data = DictProperty({})
+    is_active = BooleanProperty(True)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_tracker()
+        
+    def _setup_tracker(self):
+        self.metrics = {
+            'popularity': self._track_popularity,
+            'price_history': self._track_prices,
+            'availability': self._track_availability
+        }
+
+
+## Caminho: features/shopping/list_creator.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty, BooleanProperty
+
+class ListCreator(EventDispatcher):
+    model = ObjectProperty(None)
+    is_creating = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_creator()
+        
+    def _setup_creator(self):
+        self.templates = {
+            'basic': self._create_basic_list,
+            'detailed': self._create_detailed_list,
+            'categorized': self._create_categorized_list
+        }
+
+
+# Caminho: features/shopping/list_editor.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty, ListProperty
+
+class ListEditor(EventDispatcher):
+    active_list = ObjectProperty(None)
+    history = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_editor()
+        
+    def _setup_editor(self):
+        self.operations = {
+            'add_item': self._add_item_to_list,
+            'remove_item': self._remove_item_from_list,
+            'update_item': self._update_item_in_list
+        }
+
+
+# Caminho: features/shopping/list_tracker.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, NumericProperty
+
+class ListTracker(EventDispatcher):
+    statistics = DictProperty({})
+    total_items = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_tracker()
+        
+    def _setup_tracker(self):
+        self.tracking_metrics = {
+            'completion': self._track_completion,
+            'spending': self._track_spending,
+            'frequency': self._track_frequency
+        }
+
+
+# Caminho: integration/screen_state_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, ObjectProperty
+
+class ScreenStateManager(EventDispatcher):
+    screen_states = DictProperty({})
+    active_screen = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_screen_states()
+        
+    def _setup_screen_states(self):
+        self.states = {
+            'main': {'widgets': [], 'data': {}},
+            'shopping_list': {'widgets': [], 'data': {}},
+            'category': {'widgets': [], 'data': {}},
+            'settings': {'widgets': [], 'data': {}}
+        }
+        
+    def register_screen(self, screen_name, screen_instance):
+        if screen_name in self.states:
+            self.states[screen_name]['instance'] = screen_instance
+            self.sync_screen_state(screen_name)
+
+
+# Caminho: integration/state_persistence.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, BooleanProperty
+import json
+
+class StatePersistence(EventDispatcher):
+    stored_states = DictProperty({})
+    auto_save = BooleanProperty(True)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_persistence()
+        
+    def _setup_persistence(self):
+        self.storage_types = {
+            'local': self._handle_local_storage,
+            'session': self._handle_session_storage,
+            'memory': self._handle_memory_storage
+        }
+        
+    def save_state(self, state_id, state_data, storage_type='local'):
+        if storage_type in self.storage_types:
+            return self.storage_types[storage_type]('save', state_id, state_data)
+
+
+# Caminho: integration/state_synchronizer.py
+from kivy.event import EventDispatcher
+from kivy.properties import BooleanProperty, DictProperty
+
+class StateSynchronizer(EventDispatcher):
+    is_syncing = BooleanProperty(False)
+    sync_queue = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_synchronizer()
+        
+    def _setup_synchronizer(self):
+        self.sync_targets = {
+            'screens': {},
+            'widgets': {},
+            'models': {},
+            'controllers': {}
+        }
+        
+    def register_sync_target(self, target_type, target_id, target_instance):
+        if target_type in self.sync_targets:
+            self.sync_targets[target_type][target_id] = target_instance
+            self.sync_state(target_type, target_id)
+
+
+# Caminho: integration/widget_state_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, ListProperty
+
+class WidgetStateManager(EventDispatcher):
+    widget_states = DictProperty({})
+    active_widgets = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_widget_states()
+        
+    def _setup_widget_states(self):
+        self.states = {
+            'list_widgets': {},
+            'category_widgets': {},
+            'input_widgets': {},
+            'display_widgets': {}
+        }
+        
+    def register_widget(self, widget_id, widget_instance):
+        category = self._get_widget_category(widget_id)
+        if category in self.states:
+            self.states[category][widget_id] = {
+                'instance': widget_instance,
+                'state': widget_instance.get_state()
+            }
+
+
+# Caminho: integration/animations/effects.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+from kivy.animation import Animation
+
+class EffectsManager(EventDispatcher):
+    effects = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_effects()
+        
+    def _setup_effects(self):
+        self.effects = {
+            'ripple': self._create_ripple_effect,
+            'bounce': self._create_bounce_effect,
+            'pulse': self._create_pulse_effect
+        }
+
+
+# Caminho: integration/animations/transitions.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+from kivy.animation import Animation
+
+class TransitionManager(EventDispatcher):
+    transitions = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_transitions()
+        
+    def _setup_transitions(self):
+        self.transitions = {
+            'slide': self._create_slide_transition,
+            'fade': self._create_fade_transition,
+            'scale': self._create_scale_transition
+        }
+
+
+# Caminho: integration/real_time/sync_service.py
+from kivy.event import EventDispatcher
+from kivy.properties import BooleanProperty, NumericProperty
+from kivy.network.urlrequest import UrlRequest
+
+class SyncService(EventDispatcher):
+    is_syncing = BooleanProperty(False)
+    sync_progress = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_service()
+        
+    def _setup_service(self):
+        self.sync_queue = []
+        self.retry_attempts = 3
+
+
+# Caminho: integration/real_time/updates_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, BooleanProperty
+from kivy.clock import Clock
+
+class UpdatesManager(EventDispatcher):
+    active_updates = DictProperty({})
+    is_monitoring = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_manager()
+        
+    def _setup_manager(self):
+        self.update_interval = 1.0  # seconds
+        Clock.schedule_interval(self._check_updates, self.update_interval)
+
+
+# Caminho: integration/ui_data_binding/category_binding.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty, ListProperty
+
+class CategoryBinding(EventDispatcher):
+    view = ObjectProperty(None)
+    model = ObjectProperty(None)
+    items = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_bindings()
+        
+    def _setup_bindings(self):
+        self.bind(
+            model=self._sync_category_data,
+            items=self._update_category_items
+        )
+
+
+# Caminho: integration/ui_data_binding/item_binding.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty, BooleanProperty
+
+class ItemBinding(EventDispatcher):
+    view = ObjectProperty(None)
+    model = ObjectProperty(None)
+    is_synced = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_bindings()
+        
+    def _setup_bindings(self):
+        self.bind(
+            model=self._sync_item_data,
+            view=self._handle_item_updates
+        )
+
+
+# Caminho: integration/ui_data_binding/list_binding.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty
+
+class ListBinding(EventDispatcher):
+    view = ObjectProperty(None)
+    model = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_bindings()
+        
+    def _setup_bindings(self):
+        self.bind(
+            model=self._update_view,
+            view=self._update_model
+        )
+
+
+# Caminho: migrations/versions/001.py
+from datetime import datetime
+
+class InitialMigration:
+    version = '001'
+    
+    def up(self):
+        return [
+            """
+            CREATE TABLE users (
+                id TEXT PRIMARY KEY,
+                username TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                created_at TIMESTAMP,
+                updated_at TIMESTAMP
+            )
+            """,
+            """
+            CREATE TABLE lists (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                user_id TEXT,
+                created_at TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            )
+            """
+        ]
+
+
+# Caminho: migrations/versions/002.py
+from datetime import datetime
+
+class AddIndexesMigration:
+    version = '002'
+    
+    def up(self):
+        return [
+            """
+            CREATE INDEX idx_users_email 
+            ON users(email)
+            """,
+            """
+            CREATE INDEX idx_lists_user_id 
+            ON lists(user_id)
+            """,
+            """
+            CREATE INDEX idx_items_list_id 
+            ON items(list_id)
+            """
+        ]
+
+
+# Caminho: models/base_model.py
+from kivy.event import EventDispatcher
+from kivy.properties import StringProperty, DictProperty
+from datetime import datetime
+
+class BaseModel(EventDispatcher):
+    id = StringProperty('')
+    created_at = StringProperty('')
+    updated_at = StringProperty('')
+    metadata = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._initialize_model()
+        
+    def _initialize_model(self):
+        if not self.id:
+            self.id = self._generate_id()
+        if not self.created_at:
+            self.created_at = self._get_timestamp()
+            
+    def _generate_id(self):
+        return f"{self.__class__.__name__}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+    def _get_timestamp(self):
+        return datetime.now().isoformat()
+        
+    def update(self, data):
+        for key, value in data.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+        self.updated_at = self._get_timestamp()
+
+
+# Caminho: models/category_model.py
+from base_model import BaseModel
+from kivy.properties import (
+    StringProperty, 
+    ListProperty, 
+    DictProperty,
+    ColorProperty
+)
+
+class CategoryModel(BaseModel):
+    name = StringProperty('')
+    icon = StringProperty('default')
+    color = ColorProperty([1, 1, 1, 1])
+    items = ListProperty([])
+    attributes = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_category()
+        
+    def _setup_category(self):
+        self.attributes = {
+            'display_order': 0,
+            'is_custom': True,
+            'parent_id': None,
+            'subcategories': []
+        }
+        
+    def add_item(self, item_id):
+        if item_id not in self.items:
+            self.items.append(item_id)
+            
+    def remove_item(self, item_id):
+        if item_id in self.items:
+            self.items.remove(item_id)
+
+
+# Caminho: models/item.py
+from models.base_model import BaseModel
+from decimal import Decimal
+
+class Item(BaseModel):
+    def __init__(self, name: str, quantity: float = 1.0, unit: str = "units", price: float = 0.0, category: str = "general"):
+        super().__init__()
+        self.name = name
+        self.quantity = quantity
+        self.unit = unit
+        self.price = Decimal(str(price)).quantize(Decimal('0.01'))
+        self.category = category
+        self.is_purchased = False
+        
+    def mark_purchased(self):
+        self.is_purchased = True
+        return self.save()
+        
+    def calculate_total(self) -> Decimal:
+        return (self.price * Decimal(str(self.quantity))).quantize(Decimal('0.01'))
+        
+    def update(self, name=None, quantity=None, unit=None, price=None, category=None):
+        if name: self.name = name
+        if quantity: self.quantity = quantity
+        if unit: self.unit = unit
+        if price: self.price = Decimal(str(price)).quantize(Decimal('0.01'))
+        if category: self.category = category
+        return self.save()
+        
+    def to_dict(self):
+        base_dict = super().to_dict()
+        item_dict = {
+            'name': self.name,
+            'quantity': self.quantity,
+            'unit': self.unit,
+            'price': str(self.price),
+            'category': self.category,
+            'is_purchased': self.is_purchased
+        }
+        return {**base_dict, **item_dict}
+
+
+# Caminho: models/item_model.py
+from base_model import BaseModel
+from kivy.properties import (
+    StringProperty, 
+    NumericProperty, 
+    BooleanProperty,
+    DictProperty
+)
+
+class ItemModel(BaseModel):
+    name = StringProperty('')
+    category_id = StringProperty('')
+    price = NumericProperty(0)
+    quantity = NumericProperty(1)
+    is_checked = BooleanProperty(False)
+    details = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_item()
+        
+    def _setup_item(self):
+        self.details = {
+            'unit': 'piece',
+            'brand': '',
+            'notes': '',
+            'priority': 'normal'
+        }
+        
+    def calculate_total(self):
+        return self.price * self.quantity
+        
+    def toggle_check(self):
+        self.is_checked = not self.is_checked
+
+
+# Caminho: models/list_model.py
+from base_model import BaseModel
+from kivy.properties import (
+    StringProperty, 
+    ListProperty, 
+    NumericProperty, 
+    BooleanProperty
+)
+
+class ListModel(BaseModel):
+    name = StringProperty('')
+    owner_id = StringProperty('')
+    items = ListProperty([])
+    total = NumericProperty(0)
+    is_shared = BooleanProperty(False)
+    shared_with = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_list()
+        
+    def _setup_list(self):
+        self.categories = []
+        self.tags = []
+        self.status = 'active'
+        
+    def add_item(self, item):
+        self.items.append(item)
+        self._update_total()
+        
+    def remove_item(self, item_id):
+        self.items = [item for item in self.items if item['id'] != item_id]
+        self._update_total()
+        
+    def _update_total(self):
+        self.total = sum(item['price'] * item['quantity'] for item in self.items)
+
+
+# Caminho: models/shopping_list.py
+from models.base_model import BaseModel
+from models.item import Item
+from decimal import Decimal
+from typing import List, Optional
+from datetime import datetime
+
+class ShoppingList(BaseModel):
+    def __init__(self, name: str, owner_id: str):
+        super().__init__()
+        self.name = name
+        self.owner_id = owner_id
+        self.items: List[Item] = []
+        self.category = "default"
+        self.is_active = True
+        
+    def add_item(self, item: Item) -> bool:
+        self.items.append(item)
+        return self.save()
+        
+    def remove_item(self, item_id: str) -> bool:
+        self.items = [item for item in self.items if item.id != item_id]
+        return self.save()
+        
+    def get_total(self) -> Decimal:
+        return sum(item.calculate_total() for item in self.items)
+        
+    def sort_items(self, key: str = 'name', reverse: bool = False) -> List[Item]:
+        return sorted(self.items, key=lambda x: getattr(x, key), reverse=reverse)
+        
+    def filter_items(self, **kwargs) -> List[Item]:
+        filtered_items = self.items
+        for key, value in kwargs.items():
+            filtered_items = [item for item in filtered_items 
+                            if getattr(item, key) == value]
+        return filtered_items
+        
+    def mark_complete(self) -> bool:
+        self.is_active = False
+        return self.save()
+        
+    def to_dict(self):
+        base_dict = super().to_dict()
+        list_dict = {
+            'name': self.name,
+            'owner_id': self.owner_id,
+            'items': [item.to_dict() for item in self.items],
+            'category': self.category,
+            'is_active': self.is_active
+        }
+        return {**base_dict, **list_dict}
+
+
+# Caminho: models/user.py
+from models.base_model import BaseModel
+from models.shopping_list import ShoppingList
+from typing import List, Optional
+import hashlib
+import json
+
+class User(BaseModel):
+    def __init__(self, username: str, email: str):
+        super().__init__()
+        self.username = username
+        self.email = email
+        self.password_hash = None
+        self.lists: List[ShoppingList] = []
+        self.preferences = {
+            'default_sort': 'name',
+            'theme': 'light',
+            'notifications': True
+        }
+        
+    def set_password(self, password: str):
+        self.password_hash = hashlib.sha256(password.encode()).hexdigest()
+        return self.save()
+        
+    def verify_password(self, password: str) -> bool:
+        return self.password_hash == hashlib.sha256(password.encode()).hexdigest()
+        
+    def create_list(self, name: str) -> ShoppingList:
+        new_list = ShoppingList(name, self.id)
+        self.lists.append(new_list)
+        self.save()
+        return new_list
+        
+    def get_lists(self, active_only: bool = True) -> List[ShoppingList]:
+        if active_only:
+            return [lst for lst in self.lists if lst.is_active]
+        return self.lists
+        
+    def delete_list(self, list_id: str) -> bool:
+        self.lists = [lst for lst in self.lists if lst.id != list_id]
+        return self.save()
+        
+    def update_preferences(self, **kwargs):
+        self.preferences.update(kwargs)
+        return self.save()
+        
+    def to_dict(self):
+        base_dict = super().to_dict()
+        user_dict = {
+            'username': self.username,
+            'email': self.email,
+            'lists': [lst.to_dict() for lst in self.lists],
+            'preferences': self.preferences
+        }
+        return {**base_dict, **user_dict}
+
+
+# Caminho: models/user_model.py
+from base_model import BaseModel
+from kivy.properties import (
+    StringProperty, 
+    ListProperty, 
+    DictProperty, 
+    BooleanProperty
+)
+
+class UserModel(BaseModel):
+    username = StringProperty('')
+    email = StringProperty('')
+    preferences = DictProperty({})
+    shopping_lists = ListProperty([])
+    is_active = BooleanProperty(True)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_user()
+        
+    def _setup_user(self):
+        self.preferences = {
+            'theme': 'light',
+            'language': 'en',
+            'notifications': True,
+            'currency': 'USD'
+        }
+        
+    def add_shopping_list(self, list_id):
+        if list_id not in self.shopping_lists:
+            self.shopping_lists.append(list_id)
+            
+    def remove_shopping_list(self, list_id):
+        if list_id in self.shopping_lists:
+            self.shopping_lists.remove(list_id)
+
+
+# Caminho: screens/categories/categories_controller.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty, ListProperty
+
+class CategoriesController(EventDispatcher):
+    view = ObjectProperty(None)
+    categories = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_controller()
+        
+    def _setup_controller(self):
+        self.bind(
+            categories=self.view.setter('categories')
+        )
+        
+    def create_category(self, *args):
+        new_category = self.model.create_category()
+        self.categories.append(new_category)
+
+
+# Caminho: screens/categories/categories_screen.py
+from common.base_screen import BaseScreen
+from kivy.properties import ObjectProperty, ListProperty
+
+class CategoriesScreen(BaseScreen):
+    view = ObjectProperty(None)
+    categories = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_categories_screen()
+        
+    def _setup_categories_screen(self):
+        self.screen_title = 'Categories'
+        
+    def on_enter(self):
+        super().on_enter()
+        self.controller.load_categories()
+
+
+# Caminho: screens/categories/categories_view.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ObjectProperty, ListProperty
+from ui.components.buttons.primary_button import PrimaryButton
+
+class CategoriesView(BoxLayout):
+    controller = ObjectProperty(None)
+    categories = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_view()
+        
+    def _setup_view(self):
+        self.orientation = 'vertical'
+        self.spacing = '16dp'
+        
+        self.add_button = PrimaryButton(
+            text='Add Category',
+            on_press=self.controller.create_category
+        )
+
+
+# Caminho: screens/common/base_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import ObjectProperty, StringProperty
+
+class BaseScreen(Screen):
+    controller = ObjectProperty(None)
+    screen_title = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_screen()
+        
+    def _setup_screen(self):
+        self.padding = ('16dp', '16dp')
+        self.spacing = '8dp'
+        
+    def on_enter(self):
+        """Called when screen enters the view"""
+        self.controller.on_screen_enter()
+        
+    def on_leave(self):
+        """Called when screen leaves the view"""
+        self.controller.on_screen_leave()
+
+
+# Caminho: screens/common/navigation.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import StringProperty, ListProperty
+
+class Navigation(BoxLayout):
+    current_screen = StringProperty('')
+    nav_items = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_navigation()
+        
+    def _setup_navigation(self):
+        self.orientation = 'horizontal'
+        self.size_hint_y = None
+        self.height = '56dp'
+        
+        self.nav_items = [
+            {'name': 'main', 'icon': 'home', 'text': 'Home'},
+            {'name': 'shopping_list', 'icon': 'list', 'text': 'Lists'},
+            {'name': 'categories', 'icon': 'category', 'text': 'Categories'},
+            {'name': 'settings', 'icon': 'settings', 'text': 'Settings'}
+        ]
+
+
+# Caminho: screens/common/screen_manager.py
+from kivy.uix.screenmanager import ScreenManager
+from kivy.properties import ObjectProperty, DictProperty
+
+class AppScreenManager(ScreenManager):
+    active_controllers = DictProperty({})
+    navigation = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_manager()
+        
+    def _setup_manager(self):
+        self.transition.duration = 0.3
+        
+    def switch_screen(self, screen_name):
+        if screen_name in self.screen_names:
+            self.current = screen_name
+            self.navigation.current_screen = screen_name
+
+
+# Caminho: screens/main/main_controller.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty, ListProperty
+
+class MainController(EventDispatcher):
+    view = ObjectProperty(None)
+    model = ObjectProperty(None)
+    active_lists = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_controller()
+        
+    def _setup_controller(self):
+        self.bind(
+            active_lists=self.view.setter('lists')
+        )
+        
+    def create_new_list(self, *args):
+        new_list = self.model.create_list()
+        self.active_lists.append(new_list)
+
+
+# Caminho: screens/main/main_screen.py
+from common.base_screen import BaseScreen
+from kivy.properties import ObjectProperty, ListProperty
+
+class MainScreen(BaseScreen):
+    view = ObjectProperty(None)
+    recent_lists = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_main_screen()
+        
+    def _setup_main_screen(self):
+        self.screen_title = 'Shopping Lists'
+        self.recent_lists = []
+        
+    def on_enter(self):
+        super().on_enter()
+        self.load_recent_lists()
+
+
+# Caminho: screens/main/main_view.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ObjectProperty, ListProperty
+from ui.components.buttons.primary_button import PrimaryButton
+
+class MainView(BoxLayout):
+    controller = ObjectProperty(None)
+    lists = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_view()
+        
+    def _setup_view(self):
+        self.orientation = 'vertical'
+        self.spacing = '16dp'
+        self.padding = '16dp'
+        
+        self.add_button = PrimaryButton(
+            text='Create New List',
+            on_press=self.controller.create_new_list
+        )
+
+
+# Caminho: screens/settings/settings_controller.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty, DictProperty
+
+class SettingsController(EventDispatcher):
+    view = ObjectProperty(None)
+    settings = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_controller()
+        
+    def _setup_controller(self):
+        self.bind(
+            settings=self.view.setter('settings_data')
+        )
+        
+    def update_setting(self, category, key, value):
+        if category in self.settings:
+            self.settings[category][key] = value
+            self._save_settings()
+
+
+# Caminho: screens/settings/settings_screen.py
+from common.base_screen import BaseScreen
+from kivy.properties import ObjectProperty, DictProperty
+
+class SettingsScreen(BaseScreen):
+    view = ObjectProperty(None)
+    settings = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_settings_screen()
+        
+    def _setup_settings_screen(self):
+        self.screen_title = 'Settings'
+        
+    def on_enter(self):
+        super().on_enter()
+        self.controller.load_settings()
+
+
+# Caminho: screens/settings/settings_view.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ObjectProperty, DictProperty
+
+class SettingsView(BoxLayout):
+    controller = ObjectProperty(None)
+    settings_data = DictProperty({
+        'app': {
+            'theme': 'light',
+            'language': 'en',
+            'notifications': True
+        },
+        'display': {
+            'font_size': 'medium',
+            'color_scheme': 'default'
+        },
+        'storage': {
+            'auto_save': True,
+            'backup': True
+        }
+    })
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_view()
+
+
+# Caminho: screens/shopping_list/list_controller.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty, ListProperty, NumericProperty
+
+class ListController(EventDispatcher):
+    view = ObjectProperty(None)
+    items = ListProperty([])
+    total = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_controller()
+        
+    def _setup_controller(self):
+        self.bind(
+            items=self.view.setter('items'),
+            total=self.view.setter('total_price')
+        )
+        
+    def add_item(self, item_data):
+        new_item = self._create_item(item_data)
+        self.items.append(new_item)
+        self._update_total()
+
+
+# Caminho: screens/shopping_list/list_screen.py
+from common.base_screen import BaseScreen
+from kivy.properties import ObjectProperty, StringProperty
+
+class ListScreen(BaseScreen):
+    view = ObjectProperty(None)
+    list_id = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_list_screen()
+        
+    def _setup_list_screen(self):
+        self.screen_title = 'Shopping List'
+        
+    def load_list(self, list_id):
+        self.list_id = list_id
+        self.controller.load_list_data(list_id)
+
+
+# Caminho: screens/shopping_list/list_view.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ObjectProperty, ListProperty, NumericProperty
+from ui.components.lists.list_header import ListHeader
+from ui.components.lists.list_footer import ListFooter
+
+class ListView(BoxLayout):
+    controller = ObjectProperty(None)
+    items = ListProperty([])
+    total_price = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_view()
+        
+    def _setup_view(self):
+        self.orientation = 'vertical'
+        self.spacing = '8dp'
+        
+        self.header = ListHeader(
+            title='My Shopping List',
+            show_action_button=True
+        )
+
+
+# Caminho: services/analytics_service.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, ListProperty
+
+class AnalyticsService(EventDispatcher):
+    metrics = DictProperty({})
+    events = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_analytics_service()
+        
+    def _setup_analytics_service(self):
+        self.tracking_types = {
+            'user_action': self._track_user_action,
+            'performance': self._track_performance,
+            'error': self._track_error,
+            'usage': self._track_usage
+        }
+        
+    def track_event(self, event_type, event_data):
+        if event_type in self.tracking_types:
+            return self.tracking_types[event_type](event_data)
+
+
+# Caminho: services/auth_service.py
+from kivy.event import EventDispatcher
+from kivy.properties import BooleanProperty, StringProperty
+
+class AuthService(EventDispatcher):
+    is_authenticated = BooleanProperty(False)
+    auth_token = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_auth_service()
+        
+    def _setup_auth_service(self):
+        self.auth_methods = {
+            'email': self._authenticate_email,
+            'google': self._authenticate_google,
+            'facebook': self._authenticate_facebook,
+            'apple': self._authenticate_apple
+        }
+        
+    def authenticate(self, method, credentials):
+        if method in self.auth_methods:
+            return self.auth_methods[method](credentials)
+
+
+# Caminho: services/data_service.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, BooleanProperty
+
+class DataService(EventDispatcher):
+    data_cache = DictProperty({})
+    is_loading = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_data_service()
+        
+    def _setup_data_service(self):
+        self.data_operations = {
+            'fetch': self._fetch_data,
+            'store': self._store_data,
+            'update': self._update_data,
+            'delete': self._delete_data,
+            'sync': self._sync_data
+        }
+        
+    def execute_operation(self, operation, data):
+        if operation in self.data_operations:
+            return self.data_operations[operation](data)
+
+
+# Caminho: services/notification_service.py
+from kivy.event import EventDispatcher
+from kivy.properties import ListProperty, DictProperty
+
+class NotificationService(EventDispatcher):
+    notifications = ListProperty([])
+    channels = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_notification_service()
+        
+    def _setup_notification_service(self):
+        self.notification_types = {
+            'push': self._send_push,
+            'in_app': self._send_in_app,
+            'email': self._send_email,
+            'reminder': self._send_reminder
+        }
+        
+    def send_notification(self, notification_type, data):
+        if notification_type in self.notification_types:
+            return self.notification_types[notification_type](data)
+
+
+# Caminho: services/sync_service.py
+from kivy.event import EventDispatcher
+from kivy.properties import BooleanProperty, ListProperty
+
+class SyncService(EventDispatcher):
+    is_syncing = BooleanProperty(False)
+    sync_queue = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_sync_service()
+        
+    def _setup_sync_service(self):
+        self.sync_types = {
+            'full': self._full_sync,
+            'incremental': self._incremental_sync,
+            'selective': self._selective_sync,
+            'background': self._background_sync
+        }
+        
+    def start_sync(self, sync_type='incremental', data=None):
+        if sync_type in self.sync_types:
+            return self.sync_types[sync_type](data)
+
+
+# Caminho: state/action_dispatcher.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, ListProperty
+
+class ActionDispatcher(EventDispatcher):
+    actions = DictProperty({})
+    action_history = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_actions()
+        
+    def _setup_actions(self):
+        self.actions = {
+            'list': {
+                'create': self.create_list,
+                'update': self.update_list,
+                'delete': self.delete_list
+            },
+            'item': {
+                'add': self.add_item,
+                'remove': self.remove_item,
+                'modify': self.modify_item
+            },
+            'category': {
+                'create': self.create_category,
+                'update': self.update_category,
+                'delete': self.delete_category
+            }
+        }
+        
+    def dispatch_action(self, action_type, payload):
+        category, action = action_type.split('.')
+        if category in self.actions and action in self.actions[category]:
+            self.action_history.append({'type': action_type, 'payload': payload})
+            return self.actions[category][action](payload)
+
+
+# Caminho: state/state_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, BooleanProperty
+
+class StateManager(EventDispatcher):
+    state = DictProperty({})
+    is_initialized = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._initialize_state()
+        
+    def _initialize_state(self):
+        self.state = {
+            'shopping_lists': [],
+            'categories': {},
+            'current_user': None,
+            'settings': {},
+            'notifications': []
+        }
+        self.is_initialized = True
+        
+    def update_state(self, key, value):
+        if key in self.state:
+            self.state[key] = value
+            self.dispatch('on_state_changed', key, value)
+            
+    def get_state(self, key):
+        return self.state.get(key)
+        
+    def reset_state(self):
+        self._initialize_state()
+
+
+# Caminho: state/state_observer.py
+from kivy.event import EventDispatcher
+from kivy.properties import ListProperty, BooleanProperty
+
+class StateObserver(EventDispatcher):
+    observers = ListProperty([])
+    active = BooleanProperty(True)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_observers()
+        
+    def _setup_observers(self):
+        self.watch_list = {
+            'shopping_lists': [],
+            'user_preferences': [],
+            'app_settings': [],
+            'categories': []
+        }
+        
+    def add_observer(self, key, callback):
+        if key in self.watch_list:
+            self.watch_list[key].append(callback)
+            
+    def remove_observer(self, key, callback):
+        if key in self.watch_list and callback in self.watch_list[key]:
+            self.watch_list[key].remove(callback)
+            
+    def notify(self, key, data):
+        if key in self.watch_list and self.active:
+            for callback in self.watch_list[key]:
+                callback(data)
+
+
+# Caminho: state/state_store.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, ListProperty
+
+class StateStore(EventDispatcher):
+    store = DictProperty({})
+    history = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_store()
+        
+    def _setup_store(self):
+        self.store = {
+            'app': {
+                'theme': 'light',
+                'language': 'en',
+                'notifications_enabled': True
+            },
+            'user': {
+                'preferences': {},
+                'recent_lists': [],
+                'favorites': []
+            },
+            'data': {
+                'lists': {},
+                'items': {},
+                'categories': {}
+            }
+        }
+        
+    def commit(self, path, value):
+        keys = path.split('.')
+        current = self.store
+        for key in keys[:-1]:
+            current = current[key]
+        current[keys[-1]] = value
+        self._save_to_history()
+        
+    def _save_to_history(self):
+        self.history.append(self.store.copy())
+
+
+# Caminho: storage/cache_manager.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+from time import time
+
+class CacheManager(EventDispatcher):
+    cache = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_cache()
+        
+    def _setup_cache(self):
+        self.max_size = 100  # maximum items in cache
+        self.expiration = 300  # 5 minutes in seconds
+
+
+# Caminho: storage/local_storage.py
+from kivy.storage.jsonstore import JsonStore
+from kivy.event import EventDispatcher
+
+class LocalStorage(EventDispatcher):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_storage()
+        
+    def _setup_storage(self):
+        self.store = JsonStore('shopping_list_data.json')
+        self.cache_duration = 3600  # 1 hour in seconds
+
+
+# Caminho: ui/components/buttons/icon_button.py
+from kivy.uix.button import Button
+from kivy.properties import StringProperty, ColorProperty, NumericProperty
+
+class IconButton(Button):
+    icon = StringProperty('')
+    icon_color = ColorProperty([0.129, 0.588, 0.953, 1])  # #2196F3
+    icon_size = NumericProperty('24dp')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_button()
+        
+    def _setup_button(self):
+        self.size_hint = (None, None)
+        self.size = (self.icon_size, self.icon_size)
+        self.background_color = [0, 0, 0, 0]
+        self.ripple_color = [0.129, 0.588, 0.953, 0.2]
+
+
+# Caminho: ui/components/buttons/primary_button.py
+from kivy.uix.button import Button
+from kivy.properties import StringProperty, ColorProperty
+
+class PrimaryButton(Button):
+    text_color = ColorProperty([1, 1, 1, 1])
+    background_color = ColorProperty([0.129, 0.588, 0.953, 1])  # #2196F3
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_button()
+        
+    def _setup_button(self):
+        self.size_hint = (None, None)
+        self.height = '48dp'
+        self.padding = ('16dp', '8dp')
+        self.font_size = '16sp'
+        
+    def on_press(self):
+        self.opacity = 0.8
+        
+    def on_release(self):
+        self.opacity = 1.0
+
+
+# Caminho: ui/components/buttons/secondary_button.py
+from kivy.uix.button import Button
+from kivy.properties import StringProperty, ColorProperty
+
+class SecondaryButton(Button):
+    text_color = ColorProperty([0.129, 0.588, 0.953, 1])  # #2196F3
+    background_color = ColorProperty([0.95, 0.95, 0.95, 1])  # #F5F5F5
+    border_color = ColorProperty([0.129, 0.588, 0.953, 1])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_button()
+        
+    def _setup_button(self):
+        self.size_hint = (None, None)
+        self.height = '48dp'
+        self.padding = ('16dp', '8dp')
+        self.font_size = '16sp'
+        self.border_width = '2dp'
+
+
+# Caminho: ui/components/inputs/number_input.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import NumericProperty, BoundedNumericProperty
+from ..buttons.icon_button import IconButton
+from .text_input import CustomTextInput
+
+class NumberInput(BoxLayout):
+    value = BoundedNumericProperty(0, min=0)
+    step = NumericProperty(1)
+    max_value = NumericProperty(999)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_number_input()
+        
+    def _setup_number_input(self):
+        self.orientation = 'horizontal'
+        self.spacing = '8dp'
+        
+        self.decrease_button = IconButton(
+            icon='minus',
+            on_press=self.decrease_value
+        )
+        
+        self.input_field = CustomTextInput(
+            text=str(self.value),
+            input_filter='int'
+        )
+
+
+# Caminho: ui/components/inputs/search_input.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import StringProperty, ColorProperty, ObjectProperty
+from .text_input import CustomTextInput
+
+class SearchInput(BoxLayout):
+    search_text = StringProperty('')
+    icon_color = ColorProperty([0.5, 0.5, 0.5, 1])
+    on_search = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_search()
+        
+    def _setup_search(self):
+        self.orientation = 'horizontal'
+        self.padding = ('8dp', '0dp')
+        self.spacing = '8dp'
+        
+        self.search_field = CustomTextInput(
+            hint_text='Search...',
+            on_text_validate=self._handle_search
+        )
+
+
+# Caminho: ui/components/inputs/text_input.py
+from kivy.uix.textinput import TextInput
+from kivy.properties import StringProperty, ColorProperty, BooleanProperty
+
+class CustomTextInput(TextInput):
+    hint_text_color = ColorProperty([0.5, 0.5, 0.5, 1])
+    border_color = ColorProperty([0.129, 0.588, 0.953, 1])
+    has_error = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_input()
+        
+    def _setup_input(self):
+        self.size_hint = (None, None)
+        self.height = '48dp'
+        self.padding = ('12dp', '8dp')
+        self.font_size = '16sp'
+        self.multiline = False
+        self.background_normal = ''
+
+
+# Caminho: ui/components/lists/list_footer.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import (
+    StringProperty, 
+    NumericProperty, 
+    ColorProperty
+)
+
+class ListFooter(BoxLayout):
+    total_items = NumericProperty(0)
+    total_price = NumericProperty(0)
+    currency = StringProperty('$')
+    footer_color = ColorProperty([0.95, 0.95, 0.95, 1])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_footer()
+        
+    def _setup_footer(self):
+        self.orientation = 'horizontal'
+        self.padding = ('16dp', '8dp')
+        self.spacing = '16dp'
+        self.size_hint_y = None
+        self.height = '56dp'
+
+
+# Caminho: ui/components/lists/list_header.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import StringProperty, ColorProperty, BooleanProperty
+
+class ListHeader(BoxLayout):
+    title = StringProperty('')
+    subtitle = StringProperty('')
+    show_action_button = BooleanProperty(True)
+    background_color = ColorProperty([0.95, 0.95, 0.95, 1])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_header()
+        
+    def _setup_header(self):
+        self.orientation = 'horizontal'
+        self.padding = ('16dp', '12dp')
+        self.spacing = '8dp'
+        self.size_hint_y = None
+        self.height = '64dp'
+
+
+# Caminho: ui/components/lists/list_item.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import (
+    StringProperty, 
+    BooleanProperty, 
+    NumericProperty,
+    ObjectProperty
+)
+
+class ListItem(BoxLayout):
+    title = StringProperty('')
+    subtitle = StringProperty('')
+    is_selected = BooleanProperty(False)
+    item_id = StringProperty('')
+    on_select = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_item()
+        
+    def _setup_item(self):
+        self.orientation = 'horizontal'
+        self.padding = ('16dp', '8dp')
+        self.spacing = '8dp'
+        self.size_hint_y = None
+        self.height = '72dp'
+
+
+# Caminho: ui/components/modals/alert_modal.py
+from kivy.uix.modalview import ModalView
+from kivy.properties import StringProperty, ColorProperty
+from ..buttons.primary_button import PrimaryButton
+
+class AlertModal(ModalView):
+    title = StringProperty('')
+    message = StringProperty('')
+    button_text = StringProperty('OK')
+    modal_color = ColorProperty([1, 1, 1, 1])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_modal()
+        
+    def _setup_modal(self):
+        self.size_hint = (None, None)
+        self.size = ('300dp', '200dp')
+        self.auto_dismiss = True
+        self.background_color = [0, 0, 0, 0.5]
+
+
+# Caminho: ui/components/modals/confirm_modal.py
+from kivy.uix.modalview import ModalView
+from kivy.properties import StringProperty, ObjectProperty
+from ..buttons.primary_button import PrimaryButton
+from ..buttons.secondary_button import SecondaryButton
+
+class ConfirmModal(ModalView):
+    title = StringProperty('')
+    message = StringProperty('')
+    confirm_text = StringProperty('Confirm')
+    cancel_text = StringProperty('Cancel')
+    on_confirm = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_modal()
+        
+    def _setup_modal(self):
+        self.size_hint = (None, None)
+        self.size = ('320dp', '240dp')
+        self.auto_dismiss = False
+        self.background_color = [0, 0, 0, 0.5]
+
+
+# Caminho: ui/components/modals/input_modal.py
+from kivy.uix.modalview import ModalView
+from kivy.properties import StringProperty, ObjectProperty
+from ..inputs.text_input import CustomTextInput
+from ..buttons.primary_button import PrimaryButton
+
+class InputModal(ModalView):
+    title = StringProperty('')
+    hint_text = StringProperty('')
+    submit_text = StringProperty('Submit')
+    on_submit = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_modal()
+        
+    def _setup_modal(self):
+        self.size_hint = (None, None)
+        self.size = ('320dp', '280dp')
+        self.auto_dismiss = True
+        
+        self.input_field = CustomTextInput(
+            hint_text=self.hint_text,
+            size_hint_y=None,
+            height='48dp'
+        )
+
+
+# Caminho: ui/layouts/card_layout.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import (
+    ColorProperty,
+    NumericProperty,
+    BooleanProperty
+)
+
+class CardLayout(BoxLayout):
+    background_color = ColorProperty([1, 1, 1, 1])
+    elevation = NumericProperty('2dp')
+    radius = NumericProperty('8dp')
+    has_shadow = BooleanProperty(True)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_card()
+        
+    def _setup_card(self):
+        self.orientation = 'vertical'
+        self.padding = ('16dp', '16dp')
+        self.size_hint_y = None
+
+
+# Caminho: ui/layouts/flex_layout.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import (
+    StringProperty, 
+    NumericProperty, 
+    ColorProperty,
+    OptionProperty
+)
+
+class FlexLayout(BoxLayout):
+    direction = OptionProperty('row', options=['row', 'column'])
+    justify_content = StringProperty('flex-start')
+    align_items = StringProperty('stretch')
+    gap = NumericProperty('8dp')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        self.orientation = 'horizontal' if self.direction == 'row' else 'vertical'
+        self.padding = ('16dp', '16dp')
+        self.spacing = self.gap
+
+
+# Caminho: ui/layouts/grid_layout.py
+from kivy.uix.gridlayout import GridLayout
+from kivy.properties import NumericProperty, ColorProperty
+
+class CustomGridLayout(GridLayout):
+    spacing_x = NumericProperty('8dp')
+    spacing_y = NumericProperty('8dp')
+    background_color = ColorProperty([1, 1, 1, 1])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        self.cols = 2
+        self.padding = ('16dp', '16dp')
+        self.size_hint_y = None
+        self.bind(minimum_height=self.setter('height'))
+
+
+# Caminho: ui/styles/animations.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+from kivy.animation import Animation
+
+class AnimationsManager(EventDispatcher):
+    animations = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_animations()
+        
+    def _setup_animations(self):
+        self.animation_types = {
+            'fade': {
+                'in': lambda widget: Animation(opacity=1, duration=0.3),
+                'out': lambda widget: Animation(opacity=0, duration=0.3)
+            },
+            'slide': {
+                'in': lambda widget: Animation(x=0, duration=0.3),
+                'out': lambda widget: Animation(x=widget.width, duration=0.3)
+            },
+            'scale': {
+                'in': lambda widget: Animation(scale=1, duration=0.3),
+                'out': lambda widget: Animation(scale=0, duration=0.3)
+            }
+        }
+
+
+# Caminho: ui/styles/colors.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+
+class ColorManager(EventDispatcher):
+    color_palette = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_colors()
+        
+    def _setup_colors(self):
+        self.colors = {
+            'primary': {
+                'main': '#2196F3',
+                'light': '#64B5F6',
+                'dark': '#1976D2',
+                'contrast': '#FFFFFF'
+            },
+            'secondary': {
+                'main': '#FF4081',
+                'light': '#FF80AB',
+                'dark': '#C51162',
+                'contrast': '#FFFFFF'
+            },
+            'success': {
+                'main': '#4CAF50',
+                'light': '#81C784',
+                'dark': '#388E3C',
+                'contrast': '#FFFFFF'
+            }
+        }
+
+
+# Caminho: ui/styles/dimensions.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+from kivy.metrics import dp
+
+class DimensionsManager(EventDispatcher):
+    spacing = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_dimensions()
+        
+    def _setup_dimensions(self):
+        self.dimensions = {
+            'spacing': {
+                'xs': dp(4),
+                'sm': dp(8),
+                'md': dp(16),
+                'lg': dp(24),
+                'xl': dp(32)
+            },
+            'radius': {
+                'small': dp(4),
+                'medium': dp(8),
+                'large': dp(16),
+                'round': dp(50)
+            }
+        }
+
+
+# Caminho: ui/styles/theme.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, StringProperty
+
+class ThemeManager(EventDispatcher):
+    current_theme = StringProperty('light')
+    theme_data = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_themes()
+        
+    def _setup_themes(self):
+        self.themes = {
+            'light': {
+                'background': '#FFFFFF',
+                'surface': '#F5F5F5',
+                'primary': '#2196F3',
+                'secondary': '#FF4081',
+                'text': '#212121'
+            },
+            'dark': {
+                'background': '#121212',
+                'surface': '#1E1E1E',
+                'primary': '#BB86FC',
+                'secondary': '#03DAC6',
+                'text': '#FFFFFF'
+            }
+        }
+
+
+# Caminho: ui/styles/typography.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+
+class TypographyManager(EventDispatcher):
+    font_styles = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_typography()
+        
+    def _setup_typography(self):
+        self.typography = {
+            'h1': {
+                'font_size': 96,
+                'font_weight': 'light',
+                'line_height': 1.167,
+                'letter_spacing': -1.5
+            },
+            'h2': {
+                'font_size': 60,
+                'font_weight': 'light',
+                'line_height': 1.2,
+                'letter_spacing': -0.5
+            },
+            'body1': {
+                'font_size': 16,
+                'font_weight': 'regular',
+                'line_height': 1.5,
+                'letter_spacing': 0.15
+            }
+        }
+
+
+# Caminho: utils/auth_service.py
+
+
+# Caminho: utils/config.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+
+class Config(EventDispatcher):
+    config_data = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_config()
+        
+    def _setup_config(self):
+        self.config = {
+            'app': {
+                'debug': True,
+                'api_url': 'https://api.shoppinglist.com',
+                'max_items': 1000,
+                'cache_duration': 3600
+            },
+            'database': {
+                'host': 'localhost',
+                'port': 5432,
+                'name': 'shopping_list_db'
+            },
+            'features': {
+                'offline_mode': True,
+                'cloud_sync': True,
+                'notifications': True
+            }
+        }
+
+
+# Caminho: utils/constants.py
+from enum import Enum
+
+class AppConstants:
+    APP_NAME = "Shopping List Pro"
+    VERSION = "1.0.0"
+    
+    class Status(Enum):
+        ACTIVE = 'active'
+        INACTIVE = 'inactive'
+        PENDING = 'pending'
+        COMPLETED = 'completed'
+        
+    class Categories(Enum):
+        GROCERIES = 'groceries'
+        HOUSEHOLD = 'household'
+        ELECTRONICS = 'electronics'
+        CLOTHING = 'clothing'
+        
+    class Priority(Enum):
+        LOW = 'low'
+        MEDIUM = 'medium'
+        HIGH = 'high'
+        
+    CURRENCIES = {
+        'USD': '$',
+        'EUR': '€',
+        'GBP': '£',
+        'JPY': '¥'
+    }
+
+
+# Caminho: utils/data_binding.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, BooleanProperty
+
+class DataBinding(EventDispatcher):
+    bindings = DictProperty({})
+    active = BooleanProperty(True)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._initialize_bindings()
+        
+    def _initialize_bindings(self):
+        self.binding_types = {
+            'one_way': self._bind_one_way,
+            'two_way': self._bind_two_way,
+            'one_time': self._bind_one_time
+        }
+        
+    def bind_property(self, source, target, binding_type='two_way'):
+        if binding_type in self.binding_types:
+            binding_id = f"{id(source)}_{id(target)}"
+            self.bindings[binding_id] = {
+                'source': source,
+                'target': target,
+                'type': binding_type
+            }
+            self.binding_types[binding_type](source, target)
+            
+    def unbind_property(self, source, target):
+        binding_id = f"{id(source)}_{id(target)}"
+        if binding_id in self.bindings:
+            self.bindings.pop(binding_id)
+
+
+# Caminho: utils/db_handler.py
+
+
+# Caminho: utils/event_bus.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+from functools import partial
+
+class EventBus(EventDispatcher):
+    subscribers = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._initialize_events()
+        
+    def _initialize_events(self):
+        self.events = {
+            'list_updated': [],
+            'item_added': [],
+            'category_changed': [],
+            'budget_updated': [],
+            'settings_changed': []
+        }
+        
+    def subscribe(self, event_name, callback):
+        if event_name in self.events:
+            self.events[event_name].append(callback)
+            
+    def publish(self, event_name, data=None):
+        if event_name in self.events:
+            for callback in self.events[event_name]:
+                if data:
+                    callback(data)
+                else:
+                    callback()
+
+
+# Caminho: utils/formatters.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+from datetime import datetime
+
+class Formatters(EventDispatcher):
+    format_rules = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_formatters()
+        
+    def _setup_formatters(self):
+        self.formatters = {
+            'currency': self._format_currency,
+            'date': self._format_date,
+            'number': self._format_number,
+            'text': self._format_text,
+            'list': self._format_list
+        }
+        
+    def format(self, formatter_type, value, **options):
+        if formatter_type in self.formatters:
+            return self.formatters[formatter_type](value, **options)
+
+
+# Caminho: utils/helpers.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+
+class Helpers(EventDispatcher):
+    utility_functions = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_helpers()
+        
+    def _setup_helpers(self):
+        self.helpers = {
+            'array': {
+                'sort': self._sort_array,
+                'filter': self._filter_array,
+                'group': self._group_array
+            },
+            'string': {
+                'capitalize': self._capitalize,
+                'slugify': self._slugify,
+                'truncate': self._truncate
+            },
+            'math': {
+                'round': self._round_number,
+                'calculate_discount': self._calculate_discount,
+                'sum_array': self._sum_array
+            }
+        }
+
+
+# Caminho: utils/signal_handler.py
+from kivy.event import EventDispatcher
+from kivy.properties import ListProperty
+
+class SignalHandler(EventDispatcher):
+    active_signals = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_signals()
+        
+    def _setup_signals(self):
+        self.signals = {
+            'data_changed': [],
+            'state_updated': [],
+            'sync_required': [],
+            'refresh_needed': []
+        }
+        
+    def emit(self, signal_name, data=None):
+        if signal_name in self.signals:
+            for handler in self.signals[signal_name]:
+                handler(data)
+                
+    def connect(self, signal_name, handler):
+        if signal_name in self.signals:
+            self.signals[signal_name].append(handler)
+            
+    def disconnect(self, signal_name, handler):
+        if signal_name in self.signals:
+            self.signals[signal_name].remove(handler)
+
+
+# Caminho: utils/validators.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty
+
+class Validators(EventDispatcher):
+    validation_rules = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_validators()
+        
+    def _setup_validators(self):
+        self.validators = {
+            'email': self._validate_email,
+            'password': self._validate_password,
+            'phone': self._validate_phone,
+            'price': self._validate_price,
+            'quantity': self._validate_quantity
+        }
+        
+    def validate(self, validator_type, value):
+        if validator_type in self.validators:
+            return self.validators[validator_type](value)
+
+
+# Caminho: utils/widget_messenger.py
+from kivy.event import EventDispatcher
+from kivy.properties import ObjectProperty
+from functools import partial
+
+class WidgetMessenger(EventDispatcher):
+    event_bus = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_channels()
+        
+    def _setup_channels(self):
+        self.channels = {
+            'shopping_list': [],
+            'budget': [],
+            'family': [],
+            'settings': []
+        }
+        
+    def send_message(self, channel, message, sender=None):
+        if channel in self.channels:
+            for receiver in self.channels[channel]:
+                if receiver != sender:
+                    receiver.receive_message(message)
+                    
+    def register_widget(self, channel, widget):
+        if channel in self.channels:
+            self.channels[channel].append(widget)
+            
+    def unregister_widget(self, channel, widget):
+        if channel in self.channels and widget in self.channels[channel]:
+            self.channels[channel].remove(widget)
+
+
+# Caminho: views/base_view.py
+from kivy.uix.widget import Widget
+from kivy.properties import DictProperty, NumericProperty
+from kivy.metrics import dp
+from app.config import COLORS, WINDOW_CONFIG
+
+class BaseView(Widget):
+    theme = DictProperty(COLORS)
+    padding = NumericProperty(dp(8))
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (1, 1)
+        self.minimum_height = WINDOW_CONFIG['minimum_height']
+        self.minimum_width = WINDOW_CONFIG['minimum_width']
+        
+    def update_view(self):
+        """Updates the view's content"""
+        self.clear_widgets()
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        """Sets up the basic layout structure"""
+        pass
+        
+    def apply_theme(self, theme_dict: dict):
+        """Updates the view's theme colors"""
+        self.theme.update(theme_dict)
+        
+    def on_size(self, *args):
+        """Handles resize events"""
+        self.update_view()
+        
+    def on_pos(self, *args):
+        """Handles position changes"""
+        self.update_view()
+
+
+
+# Caminho: views/item_view.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ObjectProperty, BooleanProperty
+from kivy.metrics import dp
+from views.base_view import BaseView
+from views.widgets.custom_button import CustomButton
+
+class ItemView(BaseView):
+    item = ObjectProperty(None)
+    selected = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.height = dp(72)
+        self.size_hint_y = None
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        self.layout = BoxLayout(padding=dp(8), spacing=dp(8))
+        
+        # Main content
+        self.content = BoxLayout(orientation='vertical')
+        self.name_price = BoxLayout()
+        self.details = BoxLayout()
+        
+        # Action buttons
+        self.actions = BoxLayout(
+            size_hint_x=0.3,
+            spacing=dp(4)
+        )
+        
+        self.edit_btn = CustomButton(
+            text='Edit',
+            size_hint_x=None,
+            width=dp(48)
+        )
+        
+        self.check_btn = CustomButton(
+            text='✓',
+            size_hint_x=None,
+            width=dp(48)
+        )
+        
+        self.actions.add_widget(self.edit_btn)
+        self.actions.add_widget(self.check_btn)
+        
+        self.layout.add_widget(self.content)
+        self.layout.add_widget(self.actions)
+        self.add_widget(self.layout)
+        
+    def on_item(self, instance, value):
+        if value:
+            self.update_display()
+            
+    def update_display(self):
+        self.name_price.clear_widgets()
+        self.details.clear_widgets()
+        
+        # Update item information display
+        if self.item:
+            self.name_price.add_widget(
+                Label(
+                    text=self.item.name,
+                    bold=True,
+                    size_hint_x=0.7
+                )
+            )
+            self.name_price.add_widget(
+                Label(
+                    text=f"${self.item.price}",
+                    size_hint_x=0.3
+                )
+            )
+            
+            self.details.add_widget(
+                Label(
+                    text=f"{self.item.quantity} {self.item.unit}",
+                    size_hint_x=0.5
+                )
+            )
+            self.details.add_widget(
+                Label(
+                    text=self.item.category,
+                    size_hint_x=0.5
+                )
+            )
+            
+    def on_selected(self, instance, value):
+        self.canvas.color = self.theme['primary'] if value else self.theme['background']
+
+
+# Caminho: views/list_view.py
+from kivy.uix.recycleview import RecycleView
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.spinner import Spinner
+from kivy.metrics import dp
+from views.base_view import BaseView
+from views.widgets.custom_button import CustomButton
+
+class ListView(BaseView):
+    def __init__(self, shopping_list=None, **kwargs):
+        super().__init__(**kwargs)
+        self.shopping_list = shopping_list
+        self.sort_options = {
+            'name': 'Name',
+            'category': 'Category',
+            'price': 'Price'
+        }
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Controls bar
+        self.controls = BoxLayout(
+            size_hint_y=None,
+            height=dp(48),
+            spacing=dp(8)
+        )
+        
+        self.sort_spinner = Spinner(
+            text='Sort by',
+            values=list(self.sort_options.values()),
+            size_hint_x=0.3
+        )
+        
+        self.add_button = CustomButton(
+            text='+',
+            size_hint_x=None,
+            width=dp(48)
+        )
+        
+        self.controls.add_widget(self.sort_spinner)
+        self.controls.add_widget(self.add_button)
+        
+        # Items list
+        self.items_view = RecycleView()
+        self.items_view.viewclass = 'ItemView'
+        
+        self.layout.add_widget(self.controls)
+        self.layout.add_widget(self.items_view)
+        self.add_widget(self.layout)
+        
+    def display_items(self):
+        if self.shopping_list:
+            self.items_view.data = [
+                {'item': item} for item in self.shopping_list.items
+            ]
+            
+    def update_sort(self, sort_key):
+        if self.shopping_list:
+            self.shopping_list.sort_items(key=sort_key)
+            self.display_items()
+            
+    def refresh_view(self):
+        self.display_items()
+
+
+# Caminho: views/main_view.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.properties import ObjectProperty
+from views.base_view import BaseView
+from views.widgets.custom_button import CustomButton
+from views.widgets.search_bar import SearchBar
+
+class MainView(BaseView):
+    current_user = ObjectProperty(None)
+    screen_manager = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.screen_manager = ScreenManager()
+        self._setup_layout()
+        self._setup_navigation()
+        
+    def _setup_layout(self):
+        self.main_layout = BoxLayout(orientation='vertical')
+        self.toolbar = self._create_toolbar()
+        self.main_layout.add_widget(self.toolbar)
+        self.main_layout.add_widget(self.screen_manager)
+        self.add_widget(self.main_layout)
+        
+    def _create_toolbar(self):
+        toolbar = BoxLayout(
+            size_hint_y=None, 
+            height=dp(56),
+            padding=[dp(8)]
+        )
+        search = SearchBar()
+        menu_button = CustomButton(
+            text='Menu',
+            size_hint_x=None,
+            width=dp(48)
+        )
+        toolbar.add_widget(menu_button)
+        toolbar.add_widget(search)
+        return toolbar
+        
+    def _setup_navigation(self):
+        screens = [
+            ('lists', 'My Lists'),
+            ('items', 'Items'),
+            ('settings', 'Settings')
+        ]
+        for screen_id, title in screens:
+            screen = Screen(name=screen_id)
+            self.screen_manager.add_widget(screen)
+            
+    def switch_view(self, screen_name: str):
+        self.screen_manager.current = screen_name
+        
+    def update_navigation(self):
+        self._setup_navigation()
+        
+    def show_settings(self):
+        self.switch_view('settings')
+
+
+# Caminho: views/navigation/navigation_manager.py
+from kivy.uix.screenmanager import ScreenManager, SlideTransition
+from kivy.properties import ObjectProperty
+from kivy.event import EventDispatcher
+
+class NavigationManager(ScreenManager, EventDispatcher):
+    current_route = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.transition = SlideTransition()
+        self._setup_routes()
+        self._bind_events()
+        
+    def _setup_routes(self):
+        self.routes = {
+            'main': MainScreen,
+            'shopping_list': ShoppingListScreen,
+            'category': CategoryScreen,
+            'budget': BudgetScreen,
+            'family': FamilyScreen,
+            'store': StoreScreen,
+            'meal_planner': MealPlannerScreen,
+            'settings': SettingsScreen,
+            'profile': ProfileScreen,
+            'statistics': StatisticsScreen,
+            'notifications': NotificationsScreen,
+            'import_export': ImportExportScreen,
+            'smart_cart': SmartCartScreen
+        }
+        
+    def navigate_to(self, route_name, **params):
+        if route_name in self.routes:
+            self.current = route_name
+            self.current_route = route_name
+            self._handle_params(params)
+
+
+# Caminho: views/navigation/navigation_state.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, BooleanProperty
+
+class NavigationState(EventDispatcher):
+    state = DictProperty({
+        'can_go_back': False,
+        'previous_route': None,
+        'next_route': None,
+        'params': {}
+    })
+    
+    is_navigating = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._initialize_state()
+        
+    def _initialize_state(self):
+        self.navigation_stack = []
+        self.current_index = -1
+        
+    def push_state(self, route, params=None):
+        self.is_navigating = True
+        self.current_index += 1
+        self.navigation_stack.append({
+            'route': route,
+            'params': params or {}
+        })
+        self._update_state()
+        
+    def pop_state(self):
+        if self.can_go_back():
+            self.is_navigating = True
+            self.navigation_stack.pop()
+            self.current_index -= 1
+            self._update_state()
+            return True
+        return False
+        
+    def _update_state(self):
+        self.state.update({
+            'can_go_back': self.can_go_back(),
+            'previous_route': self.get_previous_route(),
+            'next_route': self.get_next_route(),
+            'params': self.get_current_params()
+        })
+        self.is_navigating = False
+
+
+# Caminho: views/navigation/route_handler.py
+from kivy.event import EventDispatcher
+from kivy.properties import DictProperty, StringProperty
+
+class RouteHandler(EventDispatcher):
+    route_history = DictProperty({})
+    current_route = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_routes()
+        
+    def _setup_routes(self):
+        self.routes = {
+            'main': {
+                'title': 'Home',
+                'requires_auth': False
+            },
+            'shopping_list': {
+                'title': 'Shopping Lists',
+                'requires_auth': True
+            },
+            'profile': {
+                'title': 'Profile',
+                'requires_auth': True
+            }
+        }
+        
+    def navigate(self, route_name, params=None):
+        if route_name in self.routes:
+            self.current_route = route_name
+            self.route_history[len(self.route_history)] = {
+                'route': route_name,
+                'params': params
+            }
+            return True
+        return False
+        
+    def go_back(self):
+        if len(self.route_history) > 1:
+            self.route_history.pop(len(self.route_history) - 1)
+            last_route = self.route_history[len(self.route_history) - 1]
+            self.current_route = last_route['route']
+            return True
+        return False
+
+
+# Caminho: views/navigation/screen_transitions.py
+from kivy.uix.screenmanager import (
+    NoTransition,
+    SlideTransition,
+    CardTransition,
+    SwapTransition,
+    FadeTransition
+)
+from kivy.properties import ObjectProperty
+
+class ScreenTransitions:
+    transition_map = {
+        'none': NoTransition,
+        'slide': SlideTransition,
+        'card': CardTransition,
+        'swap': SwapTransition,
+        'fade': FadeTransition
+    }
+    
+    def __init__(self):
+        self.current_transition = 'slide'
+        
+    def get_transition(self, transition_name=None):
+        if transition_name and transition_name in self.transition_map:
+            return self.transition_map[transition_name]()
+        return self.transition_map[self.current_transition]()
+        
+    def set_default_transition(self, transition_name):
+        if transition_name in self.transition_map:
+            self.current_transition = transition_name
+
+
+# Caminho: views/screens/budget_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import NumericProperty, DictProperty
+from kivy.metrics import dp
+
+class BudgetScreen(Screen):
+    total_budget = NumericProperty(0)
+    expenses = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Budget overview
+        self.budget_overview = BudgetOverview()
+        
+        # Expense tracker
+        self.expense_tracker = ExpenseTracker()
+        
+        # Price history
+        self.price_history = PriceHistory()
+        
+        # Savings suggestions
+        self.savings = SavingsSuggestions()
+        
+        # Add components
+        self.layout.add_widget(self.budget_overview)
+        self.layout.add_widget(self.expense_tracker)
+        self.layout.add_widget(self.price_history)
+        self.layout.add_widget(self.savings)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/category_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import DictProperty
+from kivy.metrics import dp
+
+class CategoryScreen(Screen):
+    category_data = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Category manager
+        self.category_manager = CategoryManager()
+        
+        # Category stats
+        self.stats_view = CategoryStats()
+        
+        # Smart labels
+        self.smart_labels = SmartLabels()
+        
+        # Quick filters
+        self.filters = QuickFilters()
+        
+        # Add components
+        self.layout.add_widget(self.category_manager)
+        self.layout.add_widget(self.stats_view)
+        self.layout.add_widget(self.smart_labels)
+        self.layout.add_widget(self.filters)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/family_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import ListProperty, DictProperty
+from kivy.metrics import dp
+
+class FamilyScreen(Screen):
+    family_members = ListProperty([])
+    shared_lists = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Family sharing manager
+        self.family_sharing = FamilySharing()
+        
+        # Shared lists view
+        self.shared_lists_view = SharedListsView()
+        
+        # Activity feed
+        self.activity_feed = ActivityFeed()
+        
+        # Collaboration tools
+        self.collab_tools = CollaborationTools()
+        
+        # Add components
+        self.layout.add_widget(self.family_sharing)
+        self.layout.add_widget(self.shared_lists_view)
+        self.layout.add_widget(self.activity_feed)
+        self.layout.add_widget(self.collab_tools)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/import_export_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import ListProperty, StringProperty
+from kivy.metrics import dp
+
+class ImportExportScreen(Screen):
+    supported_formats = ListProperty(['CSV', 'JSON', 'PDF'])
+    current_format = StringProperty('CSV')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Format selector
+        self.format_selector = FormatSelector()
+        
+        # Data preview
+        self.data_preview = DataPreview()
+        
+        # Import/Export options
+        self.transfer_options = TransferOptions()
+        
+        # Progress tracker
+        self.progress_tracker = ProgressTracker()
+        
+        # Add components
+        self.layout.add_widget(self.format_selector)
+        self.layout.add_widget(self.data_preview)
+        self.layout.add_widget(self.transfer_options)
+        self.layout.add_widget(self.progress_tracker)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/main_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import ObjectProperty
+from kivy.metrics import dp
+
+class MainScreen(Screen):
+    screen_manager = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main layout container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Top bar with status
+        self.status_bar = StatusBar()
+        
+        # Main content area
+        self.content_area = BoxLayout()
+        
+        # Bottom navigation
+        self.nav_bar = NavigationBar()
+        
+        # Add all components
+        self.layout.add_widget(self.status_bar)
+        self.layout.add_widget(self.content_area)
+        self.layout.add_widget(self.nav_bar)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/meal_planner_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import ListProperty, DictProperty
+from kivy.metrics import dp
+
+class MealPlannerScreen(Screen):
+    recipes = ListProperty([])
+    meal_plan = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Meal planner calendar
+        self.meal_planner = MealPlanner()
+        
+        # Recipe integration
+        self.recipe_manager = RecipeIntegration()
+        
+        # Shopping list generator
+        self.list_generator = ShoppingListGenerator()
+        
+        # Nutritional insights
+        self.nutrition_view = NutritionalInsights()
+        
+        # Add components
+        self.layout.add_widget(self.meal_planner)
+        self.layout.add_widget(self.recipe_manager)
+        self.layout.add_widget(self.list_generator)
+        self.layout.add_widget(self.nutrition_view)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/notifications_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import ListProperty, BooleanProperty
+from kivy.metrics import dp
+
+class NotificationsScreen(Screen):
+    notifications = ListProperty([])
+    show_read = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Notifications list
+        self.notifications_list = NotificationsList()
+        
+        # Filter options
+        self.filter_options = NotificationFilters()
+        
+        # Settings panel
+        self.settings_panel = NotificationSettings()
+        
+        # Quick actions
+        self.quick_actions = QuickActions()
+        
+        # Add components
+        self.layout.add_widget(self.notifications_list)
+        self.layout.add_widget(self.filter_options)
+        self.layout.add_widget(self.settings_panel)
+        self.layout.add_widget(self.quick_actions)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/profile_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import StringProperty, DictProperty
+from kivy.metrics import dp
+
+class ProfileScreen(Screen):
+    user_data = DictProperty({})
+    profile_image = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Profile header
+        self.profile_header = ProfileHeader()
+        
+        # User preferences
+        self.preferences = UserPreferences()
+        
+        # Shopping history
+        self.history = ShoppingHistory()
+        
+        # Account settings
+        self.account_settings = AccountSettings()
+        
+        # Add components
+        self.layout.add_widget(self.profile_header)
+        self.layout.add_widget(self.preferences)
+        self.layout.add_widget(self.history)
+        self.layout.add_widget(self.account_settings)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/settings_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import DictProperty, BooleanProperty
+from kivy.metrics import dp
+
+class SettingsScreen(Screen):
+    app_settings = DictProperty({})
+    notifications_enabled = BooleanProperty(True)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Theme selector
+        self.theme_selector = ColorThemeSelector()
+        
+        # Notification settings
+        self.notification_settings = NotificationSettings()
+        
+        # Language selector
+        self.language_selector = LanguageSelector()
+        
+        # Data management
+        self.data_manager = DataManagement()
+        
+        # Add components
+        self.layout.add_widget(self.theme_selector)
+        self.layout.add_widget(self.notification_settings)
+        self.layout.add_widget(self.language_selector)
+        self.layout.add_widget(self.data_manager)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/shopping_list_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import ListProperty
+from kivy.metrics import dp
+
+class ShoppingListScreen(Screen):
+    active_lists = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # List header with search
+        self.header = ListHeader()
+        
+        # Main list view
+        self.list_view = SwipeableListView()
+        
+        # Action buttons
+        self.action_bar = QuickActionBar()
+        
+        # Floating action button
+        self.fab = FloatingActionButton()
+        
+        # Add components
+        self.layout.add_widget(self.header)
+        self.layout.add_widget(self.list_view)
+        self.layout.add_widget(self.action_bar)
+        self.layout.add_widget(self.fab)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/smart_cart_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import ListProperty, NumericProperty
+from kivy.metrics import dp
+
+class SmartCartScreen(Screen):
+    cart_items = ListProperty([])
+    total_amount = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Smart cart view
+        self.smart_cart = SmartCart()
+        
+        # Barcode scanner
+        self.barcode_scanner = BarcodeScanner()
+        
+        # Price checker
+        self.price_checker = PriceChecker()
+        
+        # Checkout panel
+        self.checkout_panel = CheckoutPanel()
+        
+        # Add components
+        self.layout.add_widget(self.smart_cart)
+        self.layout.add_widget(self.barcode_scanner)
+        self.layout.add_widget(self.price_checker)
+        self.layout.add_widget(self.checkout_panel)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/statistics_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import DictProperty, ListProperty
+from kivy.metrics import dp
+
+class StatisticsScreen(Screen):
+    shopping_stats = DictProperty({})
+    trends = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Spending overview
+        self.spending_overview = SpendingOverview()
+        
+        # Shopping patterns
+        self.patterns = ShoppingPatterns()
+        
+        # Category analysis
+        self.category_analysis = CategoryAnalysis()
+        
+        # Export tools
+        self.export_tools = ExportTools()
+        
+        # Add components
+        self.layout.add_widget(self.spending_overview)
+        self.layout.add_widget(self.patterns)
+        self.layout.add_widget(self.category_analysis)
+        self.layout.add_widget(self.export_tools)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/screens/store_screen.py
+from kivy.uix.screenmanager import Screen
+from kivy.properties import ListProperty, DictProperty
+from kivy.metrics import dp
+
+class StoreScreen(Screen):
+    nearby_stores = ListProperty([])
+    price_data = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main container
+        self.layout = BoxLayout(orientation='vertical')
+        
+        # Store locator
+        self.store_locator = StoreLocator()
+        
+        # Price comparison
+        self.price_comparison = PriceComparison()
+        
+        # Loyalty cards
+        self.loyalty_manager = LoyaltyCardManager()
+        
+        # Store preferences
+        self.store_preferences = StorePreferences()
+        
+        # Add components
+        self.layout.add_widget(self.store_locator)
+        self.layout.add_widget(self.price_comparison)
+        self.layout.add_widget(self.loyalty_manager)
+        self.layout.add_widget(self.store_preferences)
+        
+        self.add_widget(self.layout)
+
+
+# Caminho: views/widgets/barcode_scanner.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import StringProperty, ObjectProperty
+from kivy.metrics import dp
+from kivy.clock import Clock
+
+class BarcodeScanner(BoxLayout):
+    scan_result = StringProperty('')
+    camera_active = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.padding = dp(10)
+        self._setup_scanner()
+        
+    def _setup_scanner(self):
+        # Camera preview
+        self.preview = CameraPreview(
+            size_hint_y=0.7
+        )
+        
+        # Scan overlay
+        self.overlay = ScanOverlay(
+            size_hint_y=0.7,
+            pos_hint={'top': 1}
+        )
+        
+        # Results display
+        self.results = BoxLayout(
+            orientation='vertical',
+            size_hint_y=0.3
+        )
+        
+        self.scan_button = Button(
+            text='Scan',
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        self.add_widget(self.preview)
+        self.add_widget(self.overlay)
+        self.add_widget(self.results)
+        self.add_widget(self.scan_button)
+
+
+# Caminho: views/widgets/blast_menu.py
+from kivy.uix.widget import Widget
+from kivy.properties import ListProperty, NumericProperty
+from kivy.animation import Animation
+from kivy.metrics import dp
+from math import cos, sin, pi
+
+class BlastMenu(Widget):
+    items = ListProperty([])
+    radius = NumericProperty(dp(100))
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.buttons = []
+        self.is_open = False
+        self._setup_menu()
+        
+    def _setup_menu(self):
+        # Main trigger button
+        self.trigger = BlastButton(
+            text='+',
+            size=(dp(56), dp(56)),
+            pos_hint={'center_x': 0.5, 'center_y': 0.5}
+        )
+        self.trigger.bind(on_release=self.toggle)
+        self.add_widget(self.trigger)
+        
+        # Create action buttons
+        for idx, item in enumerate(self.items):
+            btn = BlastButton(
+                text=item['icon'],
+                size=(dp(48), dp(48)),
+                opacity=0
+            )
+            btn.bind(on_release=lambda x, i=item: self._handle_action(i))
+            self.buttons.append(btn)
+            self.add_widget(btn)
+            
+    def toggle(self, *args):
+        if self.is_open:
+            self._close_menu()
+        else:
+            self._open_menu()
+            
+    def _open_menu(self):
+        self.is_open = True
+        for idx, btn in enumerate(self.buttons):
+            angle = 2 * pi * idx / len(self.buttons)
+            x = self.radius * cos(angle)
+            y = self.radius * sin(angle)
+            
+            anim = Animation(
+                pos_hint={'center_x': 0.5 + x/self.width,
+                         'center_y': 0.5 + y/self.height},
+                opacity=1,
+                duration=0.3,
+                t='out_elastic'
+            )
+            anim.start(btn)
+            
+    def _close_menu(self):
+        self.is_open = False
+        for btn in self.buttons:
+            anim = Animation(
+                pos_hint={'center_x': 0.5, 'center_y': 0.5},
+                opacity=0,
+                duration=0.2
+            )
+            anim.start(btn)
+
+
+# Caminho: views/widgets/budget_tracker.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import NumericProperty, ListProperty
+from kivy.metrics import dp
+from kivy.animation import Animation
+
+class BudgetTracker(BoxLayout):
+    budget_limit = NumericProperty(0)
+    current_spent = NumericProperty(0)
+    spending_history = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(12)
+        self.padding = dp(15)
+        self._setup_tracker()
+        
+    def _setup_tracker(self):
+        # Budget progress circle
+        self.progress_circle = CircularProgress(
+            size_hint_y=None,
+            height=dp(200)
+        )
+        
+        # Spending breakdown
+        self.breakdown = SpendingBreakdown(
+            size_hint_y=None,
+            height=dp(150)
+        )
+        
+        # Alert threshold slider
+        self.alert_slider = AlertSlider(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        self.add_widget(self.progress_circle)
+        self.add_widget(self.breakdown)
+        self.add_widget(self.alert_slider)
+
+
+# Caminho: views/widgets/bulk_purchase.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import NumericProperty, DictProperty
+from kivy.metrics import dp
+
+class BulkPurchase(BoxLayout):
+    bulk_discounts = DictProperty({})
+    minimum_quantities = DictProperty({})
+    total_savings = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(12)
+        self._setup_bulk_calculator()
+        
+    def _setup_bulk_calculator(self):
+        # Quantity selector
+        self.quantity_selector = QuantitySelector(
+            size_hint_y=0.3
+        )
+        
+        # Discount tiers display
+        self.discount_tiers = DiscountTiers(
+            size_hint_y=0.3
+        )
+        
+        # Savings calculator
+        self.savings_display = SavingsDisplay(
+            size_hint_y=0.3
+        )
+        
+        # Order button
+        self.order_button = OrderButton(
+            size_hint_y=0.1
+        )
+        
+        self.add_widget(self.quantity_selector)
+        self.add_widget(self.discount_tiers)
+        self.add_widget(self.savings_display)
+        self.add_widget(self.order_button)
+
+
+# Caminho: views/widgets/category_manager.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, DictProperty
+from kivy.metrics import dp
+
+class CategoryManager(BoxLayout):
+    categories = ListProperty([])
+    category_icons = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self._setup_manager()
+        
+    def _setup_manager(self):
+        # Category grid
+        self.category_grid = CategoryGrid(
+            size_hint_y=0.5
+        )
+        
+        # Icon selector
+        self.icon_selector = IconSelector(
+            size_hint_y=0.2
+        )
+        
+        # Category editor
+        self.category_editor = CategoryEditor(
+            size_hint_y=0.3
+        )
+        
+        # Add category button
+        self.add_button = AddCategoryButton(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        self.add_widget(self.category_grid)
+        self.add_widget(self.icon_selector)
+        self.add_widget(self.category_editor)
+        self.add_widget(self.add_button)
+
+
+# Caminho: views/widgets/category_selector.py
+from kivy.uix.gridlayout import GridLayout
+from kivy.properties import ListProperty, StringProperty
+from kivy.metrics import dp
+
+class CategorySelector(GridLayout):
+    categories = ListProperty([
+        'Groceries', 'Electronics', 'Clothing',
+        'Home', 'Health', 'Other'
+    ])
+    selected_category = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.cols = 3
+        self.spacing = dp(8)
+        self.padding = dp(8)
+        self.size_hint_y = None
+        self._setup_categories()
+        
+    def _setup_categories(self):
+        for category in self.categories:
+            btn = ToggleButton(
+                text=category,
+                group='categories',
+                size_hint_y=None,
+                height=dp(40)
+            )
+            btn.bind(state=self._on_category_select)
+            self.add_widget(btn)
+            
+    def _on_category_select(self, instance, value):
+        if value == 'down':
+            self.selected_category = instance.text
+            
+    def add_category(self, category_name):
+        if category_name not in self.categories:
+            self.categories.append(category_name)
+            self._setup_categories()
+
+
+# Caminho: views/widgets/color_theme_selector.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, ObjectProperty
+from kivy.metrics import dp
+
+class ColorThemeSelector(BoxLayout):
+    current_theme = DictProperty()
+    themes = DictProperty({
+        'light': {
+            'primary': '#2196F3',
+            'secondary': '#FF9800',
+            'background': '#FFFFFF',
+            'text': '#000000'
+        },
+        'dark': {
+            'primary': '#1976D2',
+            'secondary': '#F57C00',
+            'background': '#121212',
+            'text': '#FFFFFF'
+        },
+        'nature': {
+            'primary': '#4CAF50',
+            'secondary': '#8BC34A',
+            'background': '#F1F8E9',
+            'text': '#1B5E20'
+        }
+    })
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(10)
+        self.padding = dp(15)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        for theme_name, colors in self.themes.items():
+            theme_btn = ThemeButton(
+                text=theme_name.title(),
+                colors=colors,
+                size_hint_y=None,
+                height=dp(50)
+            )
+            theme_btn.bind(on_release=lambda btn: self._select_theme(btn.colors))
+            self.add_widget(theme_btn)
+            
+    def _select_theme(self, theme_colors):
+        self.current_theme = theme_colors
+
+
+# Caminho: views/widgets/custom_button.py
+from kivy.uix.button import Button
+from kivy.properties import ListProperty, NumericProperty
+from kivy.metrics import dp
+from kivy.animation import Animation
+
+class CustomButton(Button):
+    ripple_color = ListProperty([0.8, 0.8, 0.8, 0.5])
+    ripple_duration = NumericProperty(0.3)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.background_normal = ''
+        self.background_color = [0.2, 0.6, 0.9, 1]
+        self.border_radius = [dp(5)]
+        self.min_height = dp(48)
+        self._ripple_pos = None
+        
+    def on_press(self):
+        self._ripple_pos = self.pos
+        anim = Animation(
+            background_color=[0.1, 0.5, 0.8, 1],
+            duration=self.ripple_duration
+        )
+        anim.start(self)
+        
+    def on_release(self):
+        anim = Animation(
+            background_color=[0.2, 0.6, 0.9, 1],
+            duration=self.ripple_duration
+        )
+        anim.start(self)
+
+
+
+# Caminho: views/widgets/dialog_box.py
+from kivy.uix.modalview import ModalView
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import StringProperty, ObjectProperty
+from kivy.metrics import dp
+
+class DialogBox(ModalView):
+    title = StringProperty('')
+    content = StringProperty('')
+    callback = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.8, None)
+        self.height = dp(200)
+        self.auto_dismiss = False
+        
+        self.layout = BoxLayout(orientation='vertical', padding=dp(16))
+        
+        # Title
+        self.title_label = Label(
+            text=self.title,
+            size_hint_y=0.2,
+            bold=True
+        )
+        
+        # Content
+        self.content_layout = BoxLayout(
+            orientation='vertical',
+            size_hint_y=0.6
+        )
+        
+        # Buttons
+        self.button_layout = BoxLayout(
+            size_hint_y=0.2,
+            spacing=dp(10)
+        )
+        
+        self.cancel_button = Button(
+            text='Cancel',
+            on_release=self.dismiss
+        )
+        
+        self.confirm_button = Button(
+            text='Confirm',
+            on_release=self._on_confirm
+        )
+        
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        self.button_layout.add_widget(self.cancel_button)
+        self.button_layout.add_widget(self.confirm_button)
+        
+        self.layout.add_widget(self.title_label)
+        self.layout.add_widget(self.content_layout)
+        self.layout.add_widget(self.button_layout)
+        
+        self.add_widget(self.layout)
+        
+    def _on_confirm(self, *args):
+        if self.callback:
+            self.callback()
+        self.dismiss()
+
+
+# Caminho: views/widgets/discount_calculator.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import NumericProperty, StringProperty
+from kivy.metrics import dp
+
+class DiscountCalculator(BoxLayout):
+    original_price = NumericProperty(0)
+    discount_percentage = NumericProperty(0)
+    final_price = NumericProperty(0)
+    savings = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(12)
+        self._setup_calculator()
+        
+    def _setup_calculator(self):
+        # Price input
+        self.price_input = PriceInput(
+            size_hint_y=0.25
+        )
+        
+        # Discount selector
+        self.discount_selector = DiscountSelector(
+            size_hint_y=0.25
+        )
+        
+        # Results display
+        self.results = ResultsDisplay(
+            size_hint_y=0.3
+        )
+        
+        # Quick discount buttons
+        self.quick_discounts = QuickDiscountButtons(
+            size_hint_y=0.2
+        )
+        
+        self.add_widget(self.price_input)
+        self.add_widget(self.discount_selector)
+        self.add_widget(self.results)
+        self.add_widget(self.quick_discounts)
+
+
+# Caminho: views/widgets/drag_drop_list.py
+from kivy.uix.recycleview import RecycleView
+from kivy.properties import BooleanProperty, NumericProperty
+from kivy.animation import Animation
+from kivy.metrics import dp
+
+class DragAndDropList(RecycleView):
+    dragging = BooleanProperty(False)
+    drag_index = NumericProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.effect_cls = None  # Disable scroll effect during drag
+        self.drag_start_y = 0
+        self.original_index = None
+        
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            self.drag_start_y = touch.y
+            for idx, item in enumerate(self.data):
+                if self._item_at_position(touch.y, idx):
+                    self.drag_index = idx
+                    self.original_index = idx
+                    self.dragging = True
+                    return True
+        return super().on_touch_down(touch)
+        
+    def on_touch_move(self, touch):
+        if self.dragging:
+            current_y = touch.y
+            new_index = self._get_index_at_pos(current_y)
+            
+            if new_index != self.drag_index:
+                self._swap_items(self.drag_index, new_index)
+                self.drag_index = new_index
+            return True
+        return super().on_touch_move(touch)
+        
+    def on_touch_up(self, touch):
+        if self.dragging:
+            self.dragging = False
+            self._animate_item_to_position(self.drag_index)
+            return True
+        return super().on_touch_up(touch)
+        
+    def _swap_items(self, old_index, new_index):
+        self.data[old_index], self.data[new_index] = \
+            self.data[new_index], self.data[old_index]
+
+
+# Caminho: views/widgets/dropdown_menu.py
+from kivy.uix.dropdown import DropDown
+from kivy.uix.button import Button
+from kivy.metrics import dp
+from kivy.properties import ListProperty, StringProperty
+
+class DropdownMenu(Button):
+    items = ListProperty([])
+    selected = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.dropdown = DropDown()
+        self.bind(items=self._update_items)
+        self.bind(on_release=self.dropdown.open)
+        self.dropdown.bind(on_select=self._on_select)
+        self.size_hint_y = None
+        self.height = dp(48)
+        
+    def _update_items(self, instance, value):
+        self.dropdown.clear_widgets()
+        for item in self.items:
+            btn = Button(
+                text=str(item),
+                size_hint_y=None,
+                height=dp(48)
+            )
+            btn.bind(on_release=lambda btn: self.dropdown.select(btn.text))
+            self.dropdown.add_widget(btn)
+            
+    def _on_select(self, instance, value):
+        self.selected = value
+        self.text = value
+
+
+# Caminho: views/widgets/expense_tracker.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, NumericProperty
+from kivy.metrics import dp
+
+class ExpenseTracker(BoxLayout):
+    expenses = DictProperty({})
+    monthly_budget = NumericProperty(0)
+    total_spent = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self._setup_expense_tracker()
+        
+    def _setup_expense_tracker(self):
+        # Expense summary
+        self.summary = ExpenseSummary(
+            size_hint_y=0.3
+        )
+        
+        # Category breakdown
+        self.category_breakdown = CategoryBreakdown(
+            size_hint_y=0.3
+        )
+        
+        # Trend analysis
+        self.trend_analysis = TrendAnalysis(
+            size_hint_y=0.3
+        )
+        
+        # Export report button
+        self.export_button = ExportButton(
+            size_hint_y=0.1
+        )
+        
+        self.add_widget(self.summary)
+        self.add_widget(self.category_breakdown)
+        self.add_widget(self.trend_analysis)
+        self.add_widget(self.export_button)
+
+
+# Caminho: views/widgets/family_sharing.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, DictProperty
+from kivy.metrics import dp
+
+class FamilySharing(BoxLayout):
+    family_members = ListProperty([])
+    shared_lists = DictProperty({})
+    permissions = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self._setup_sharing()
+        
+    def _setup_sharing(self):
+        # Family members list
+        self.members_list = MembersList(
+            size_hint_y=0.4
+        )
+        
+        # Shared lists view
+        self.lists_view = SharedListsView(
+            size_hint_y=0.3
+        )
+        
+        # Permission manager
+        self.permission_manager = PermissionManager(
+            size_hint_y=0.3
+        )
+        
+        # Invite button
+        self.invite_button = InviteButton(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        self.add_widget(self.members_list)
+        self.add_widget(self.lists_view)
+        self.add_widget(self.permission_manager)
+        self.add_widget(self.invite_button)
+
+
+# Caminho: views/widgets/filter_panel.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, ListProperty
+from kivy.metrics import dp
+
+class FilterPanel(BoxLayout):
+    filters = DictProperty({
+        'price_range': (0, 1000),
+        'categories': [],
+        'sort_by': 'name',
+        'sort_order': 'asc'
+    })
+    
+    active_filters = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.padding = dp(10)
+        self.spacing = dp(8)
+        self._setup_filters()
+        
+    def _setup_filters(self):
+        # Price Range Slider
+        self.price_slider = RangeSlider(
+            range=(0, 1000),
+            value=self.filters['price_range']
+        )
+        
+        # Categories MultiSelect
+        self.category_select = ChipSelect(
+            choices=self.filters['categories']
+        )
+        
+        # Sort Options
+        self.sort_spinner = Spinner(
+            text='Sort by',
+            values=['name', 'price', 'date']
+        )
+        
+        # Order Toggle
+        self.order_toggle = ToggleButton(
+            text='↑↓'
+        )
+        
+        self._add_filter_widgets()
+        
+    def _add_filter_widgets(self):
+        self.add_widget(Label(text='Price Range'))
+        self.add_widget(self.price_slider)
+        self.add_widget(Label(text='Categories'))
+        self.add_widget(self.category_select)
+        self.add_widget(self.sort_spinner)
+        self.add_widget(self.order_toggle)
+
+
+# Caminho: views/widgets/floating_action_button.py
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.floatlayout import FloatLayout
+from kivy.properties import StringProperty, ListProperty
+from kivy.metrics import dp
+from kivy.animation import Animation
+
+class FloatingActionButton(ButtonBehavior, FloatLayout):
+    icon = StringProperty('+')
+    background_color = ListProperty([0.2, 0.6, 0.9, 1])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (None, None)
+        self.size = (dp(56), dp(56))
+        self.pos_hint = {'right': 0.95, 'bottom': 0.1}
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        with self.canvas.before:
+            Color(*self.background_color)
+            self.circle = Ellipse(
+                pos=self.pos,
+                size=self.size
+            )
+            
+        self.label = Label(
+            text=self.icon,
+            pos=self.pos,
+            size=self.size,
+            font_size=dp(24)
+        )
+        self.add_widget(self.label)
+        
+    def on_press(self):
+        anim = Animation(
+            background_color=[0.1, 0.5, 0.8, 1],
+            duration=0.1
+        )
+        anim.start(self)
+        
+    def on_release(self):
+        anim = Animation(
+            background_color=self.background_color,
+            duration=0.1
+        )
+        anim.start(self)
+
+
+# Caminho: views/widgets/import_export.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, StringProperty
+from kivy.metrics import dp
+
+class ImportExport(BoxLayout):
+    supported_formats = ListProperty(['CSV', 'JSON', 'PDF'])
+    export_path = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self._setup_tools()
+        
+    def _setup_tools(self):
+        # Format selector
+        self.format_selector = FormatSelector(
+            size_hint_y=0.3
+        )
+        
+        # File browser
+        self.file_browser = FileBrowser(
+            size_hint_y=0.4
+        )
+        
+        # Options panel
+        self.options_panel = ExportOptions(
+            size_hint_y=0.2
+        )
+        
+        # Action buttons
+        self.action_buttons = ActionButtons(
+            size_hint_y=0.1
+        )
+        
+        self.add_widget(self.format_selector)
+        self.add_widget(self.file_browser)
+        self.add_widget(self.options_panel)
+        self.add_widget(self.action_buttons)
+
+
+# Caminho: views/widgets/list_item_card.py
+from kivy.uix.behaviors import ButtonBehavior
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ObjectProperty, BooleanProperty
+from kivy.metrics import dp
+from kivy.animation import Animation
+
+class ListItemCard(ButtonBehavior, BoxLayout):
+    item = ObjectProperty(None)
+    selected = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.padding = dp(8)
+        self.spacing = dp(4)
+        self.size_hint_y = None
+        self.height = dp(120)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Header with name and price
+        self.header = BoxLayout(size_hint_y=0.4)
+        
+        # Details section
+        self.details = BoxLayout(size_hint_y=0.4)
+        
+        # Actions section
+        self.actions = BoxLayout(size_hint_y=0.2)
+        
+        self.add_widget(self.header)
+        self.add_widget(self.details)
+        self.add_widget(self.actions)
+        
+    def on_item(self, instance, value):
+        if value:
+            self.update_display()
+            
+    def update_display(self):
+        self._animate_update()
+        
+    def _animate_update(self):
+        anim = Animation(opacity=0, duration=0.1) + Animation(opacity=1, duration=0.2)
+        anim.start(self)
+
+
+
+# Caminho: views/widgets/loading_spinner.py
+from kivy.uix.widget import Widget
+from kivy.properties import NumericProperty
+from kivy.animation import Animation
+from kivy.clock import Clock
+from kivy.metrics import dp
+
+class LoadingSpinner(Widget):
+    angle = NumericProperty(0)
+    size = NumericProperty(dp(48))
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (None, None)
+        self._anim = None
+        self._setup_animation()
+        
+    def _setup_animation(self):
+        with self.canvas:
+            Color(0.2, 0.6, 0.9, 1)
+            self.spinner = Line(
+                circle=(self.center_x, self.center_y, self.size/2),
+                width=dp(2)
+            )
+            
+    def start(self):
+        anim = Animation(angle=360, duration=1)
+        anim.bind(on_complete=self._rotate_complete)
+        self._anim = anim
+        anim.start(self)
+        
+    def _rotate_complete(self, *args):
+        self.angle = 0
+        if self._anim:
+            self._anim.start(self)
+            
+    def stop(self):
+        if self._anim:
+            self._anim.cancel(self)
+            self._anim = None
+
+
+# Caminho: views/widgets/loyalty_card_manager.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, NumericProperty
+from kivy.metrics import dp
+
+class LoyaltyCardManager(BoxLayout):
+    cards = DictProperty({})
+    total_savings = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self._setup_card_manager()
+        
+    def _setup_card_manager(self):
+        # Digital cards carousel
+        self.cards_carousel = CardCarousel(
+            size_hint_y=0.4
+        )
+        
+        # Points tracker
+        self.points_tracker = PointsTracker(
+            size_hint_y=0.3
+        )
+        
+        # Savings summary
+        self.savings_summary = SavingsSummary(
+            size_hint_y=0.3
+        )
+        
+        # Add card button
+        self.add_card = AddCardButton(
+            size_hint_y=None,
+            height=dp(48),
+            text='Add New Card'
+        )
+        
+        self.add_widget(self.cards_carousel)
+        self.add_widget(self.points_tracker)
+        self.add_widget(self.savings_summary)
+        self.add_widget(self.add_card)
+
+
+# Caminho: views/widgets/meal_planner.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, ListProperty
+from kivy.metrics import dp
+
+class MealPlanner(BoxLayout):
+    weekly_plan = DictProperty({})
+    meal_categories = ListProperty(['Breakfast', 'Lunch', 'Dinner', 'Snacks'])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(10)
+        self._setup_planner()
+        
+    def _setup_planner(self):
+        # Calendar view
+        self.calendar = WeeklyCalendar(
+            size_hint_y=0.4
+        )
+        
+        # Meal slots
+        self.meal_grid = MealGrid(
+            size_hint_y=0.4
+        )
+        
+        # Shopping list generator
+        self.list_generator = ShoppingListGenerator(
+            size_hint_y=0.2
+        )
+        
+        # Quick actions
+        self.actions = QuickActionBar(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        self.add_widget(self.calendar)
+        self.add_widget(self.meal_grid)
+        self.add_widget(self.list_generator)
+        self.add_widget(self.actions)
+
+
+# Caminho: views/widgets/multi_select_list.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, BooleanProperty
+from kivy.metrics import dp
+
+class MultiSelectList(BoxLayout):
+    items = ListProperty([])
+    selected_items = ListProperty([])
+    selection_mode = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(2)
+        self._setup_header()
+        self._setup_list()
+        
+    def _setup_header(self):
+        self.header = BoxLayout(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        self.select_all = CheckBox(
+            size_hint_x=0.1,
+            active=False
+        )
+        self.select_all.bind(active=self._toggle_all)
+        
+        self.action_bar = BoxLayout(size_hint_x=0.9)
+        
+        self.header.add_widget(self.select_all)
+        self.header.add_widget(self.action_bar)
+        self.add_widget(self.header)
+        
+    def _setup_list(self):
+        self.list_container = BoxLayout(orientation='vertical')
+        for item in self.items:
+            self._add_item_widget(item)
+        self.add_widget(self.list_container)
+        
+    def _add_item_widget(self, item):
+        item_row = SelectableItem(
+            item=item,
+            on_select=self._on_item_select
+        )
+        self.list_container.add_widget(item_row)
+        
+    def _toggle_all(self, instance, value):
+        if value:
+            self.selected_items = self.items.copy()
+        else:
+            self.selected_items.clear()
+
+
+# Caminho: views/widgets/notification_banner.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import StringProperty, NumericProperty
+from kivy.animation import Animation
+from kivy.metrics import dp
+from kivy.clock import Clock
+
+class NotificationBanner(BoxLayout):
+    message = StringProperty('')
+    duration = NumericProperty(3)  # seconds
+    type = StringProperty('info')  # info, success, error, warning
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'horizontal'
+        self.size_hint_y = None
+        self.height = dp(60)
+        self.opacity = 0
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        self.icon = Label(
+            size_hint_x=0.1,
+            font_name='MaterialIcons'
+        )
+        
+        self.message_label = Label(
+            text=self.message,
+            size_hint_x=0.8
+        )
+        
+        self.close_btn = Button(
+            text='×',
+            size_hint_x=0.1,
+            on_release=self.dismiss
+        )
+        
+        self.add_widget(self.icon)
+        self.add_widget(self.message_label)
+        self.add_widget(self.close_btn)
+        
+    def show(self, message, type='info'):
+        self.message = message
+        self.type = type
+        self._update_style()
+        self._animate_in()
+        Clock.schedule_once(self.dismiss, self.duration)
+        
+    def _animate_in(self):
+        Animation(opacity=1, duration=0.3).start(self)
+        
+    def dismiss(self, *args):
+        anim = Animation(opacity=0, duration=0.3)
+        anim.bind(on_complete=lambda *x: self.parent.remove_widget(self))
+        anim.start(self)
+
+
+# Caminho: views/widgets/photo_notes.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, StringProperty
+from kivy.metrics import dp
+
+class PhotoNotes(BoxLayout):
+    photos = ListProperty([])
+    current_note = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(12)
+        self._setup_photo_notes()
+        
+    def _setup_photo_notes(self):
+        # Camera preview
+        self.camera_preview = CameraPreview(
+            size_hint_y=0.4
+        )
+        
+        # Photo gallery
+        self.photo_gallery = PhotoGallery(
+            size_hint_y=0.3
+        )
+        
+        # Notes editor
+        self.notes_editor = NotesEditor(
+            size_hint_y=0.2
+        )
+        
+        # Control buttons
+        self.controls = PhotoControls(
+            size_hint_y=0.1
+        )
+        
+        self.add_widget(self.camera_preview)
+        self.add_widget(self.photo_gallery)
+        self.add_widget(self.notes_editor)
+        self.add_widget(self.controls)
+
+
+# Caminho: views/widgets/price_comparison.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, ListProperty
+from kivy.metrics import dp
+
+class PriceComparison(BoxLayout):
+    stores = ListProperty([])
+    price_data = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(10)
+        self._setup_comparison_view()
+        
+    def _setup_comparison_view(self):
+        # Store selector
+        self.store_tabs = TabBar(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        # Price grid
+        self.price_grid = GridLayout(
+            cols=3,  # Store, Price, Date
+            spacing=dp(5)
+        )
+        
+        # Best price indicator
+        self.best_price = BestPriceCard(
+            size_hint_y=None,
+            height=dp(80)
+        )
+        
+        self.add_widget(self.store_tabs)
+        self.add_widget(self.price_grid)
+        self.add_widget(self.best_price)
+
+
+# Caminho: views/widgets/price_history.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, ListProperty
+from kivy.metrics import dp
+from kivy.garden.graph import Graph, LinePlot
+
+class PriceHistory(BoxLayout):
+    price_data = DictProperty({})
+    tracked_items = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(12)
+        self._setup_price_tracker()
+        
+    def _setup_price_tracker(self):
+        # Price graph
+        self.price_graph = PriceGraph(
+            size_hint_y=0.5
+        )
+        
+        # Statistics panel
+        self.stats_panel = StatsPanel(
+            size_hint_y=0.3
+        )
+        
+        # Price alerts
+        self.price_alerts = PriceAlerts(
+            size_hint_y=0.2
+        )
+        
+        self.add_widget(self.price_graph)
+        self.add_widget(self.stats_panel)
+        self.add_widget(self.price_alerts)
+
+
+# Caminho: views/widgets/quick_action_bar.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, ObjectProperty
+from kivy.metrics import dp
+from kivy.animation import Animation
+
+class QuickActionBar(BoxLayout):
+    actions = ListProperty([])
+    on_action = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'horizontal'
+        self.size_hint_y = None
+        self.height = dp(56)
+        self.padding = [dp(8)]
+        self.spacing = dp(8)
+        self._setup_actions()
+        
+    def _setup_actions(self):
+        for action in self.actions:
+            btn = IconButton(
+                icon=action['icon'],
+                text=action['label'],
+                on_release=lambda x, a=action: self._trigger_action(a)
+            )
+            self.add_widget(btn)
+            
+    def _trigger_action(self, action):
+        if self.on_action:
+            self.on_action(action['id'])
+            self._animate_button(action['id'])
+            
+    def _animate_button(self, action_id):
+        for child in self.children:
+            if child.action_id == action_id:
+                anim = Animation(scale=0.8, duration=0.1) + Animation(scale=1, duration=0.1)
+                anim.start(child)
+
+
+# Caminho: views/widgets/recipe_integration.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, DictProperty
+from kivy.metrics import dp
+
+class RecipeIntegration(BoxLayout):
+    recipes = ListProperty([])
+    ingredients_mapping = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self._setup_recipe_view()
+        
+    def _setup_recipe_view(self):
+        # Recipe browser
+        self.recipe_browser = RecipeBrowser(
+            size_hint_y=0.6
+        )
+        
+        # Ingredients converter
+        self.converter = IngredientsConverter(
+            size_hint_y=0.2
+        )
+        
+        # Quick add to list
+        self.quick_add = QuickAddPanel(
+            size_hint_y=0.2
+        )
+        
+        self.add_widget(self.recipe_browser)
+        self.add_widget(self.converter)
+        self.add_widget(self.quick_add)
+
+
+# Caminho: views/widgets/search_bar.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
+from kivy.properties import ListProperty, ObjectProperty
+from kivy.clock import Clock
+from kivy.metrics import dp
+
+class SearchBar(BoxLayout):
+    suggestions = ListProperty([])
+    on_search = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'horizontal'
+        self.height = dp(48)
+        self.size_hint_y = None
+        self.padding = [dp(8)]
+        
+        # Search input
+        self.search_input = TextInput(
+            multiline=False,
+            hint_text='Search...',
+            size_hint_x=0.9,
+            padding=[dp(12), dp(12), 0, 0]
+        )
+        self.search_input.bind(text=self._on_text_change)
+        
+        # Clear button
+        self.clear_button = Button(
+            text='×',
+            size_hint_x=0.1,
+            background_normal='',
+            background_color=[0.9, 0.9, 0.9, 1]
+        )
+        self.clear_button.bind(on_release=self.clear_search)
+        
+        self.add_widget(self.search_input)
+        self.add_widget(self.clear_button)
+        
+    def _on_text_change(self, instance, value):
+        Clock.unschedule(self._trigger_search)
+        Clock.schedule_once(self._trigger_search, 0.5)
+        
+    def _trigger_search(self, dt):
+        if self.on_search:
+            self.on_search(self.search_input.text)
+            
+    def clear_search(self, *args):
+        self.search_input.text = ''
+        
+    def update_suggestions(self, suggestions):
+        self.suggestions = suggestions
+
+
+# Caminho: views/widgets/seasonal_suggestions.py
+from kivy.uix.scrollview import ScrollView
+from kivy.properties import DictProperty, StringProperty
+from kivy.metrics import dp
+
+class SeasonalSuggestions(ScrollView):
+    current_season = StringProperty('')
+    seasonal_items = DictProperty({
+        'summer': ['sunscreen', 'ice cream', 'water'],
+        'winter': ['hot chocolate', 'soup', 'tea'],
+        'spring': ['allergy medicine', 'umbrella'],
+        'fall': ['pumpkin spice', 'apple cider']
+    })
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint_y = None
+        self.height = dp(200)
+        self._setup_suggestions()
+        
+    def _setup_suggestions(self):
+        # Main container
+        self.container = GridLayout(
+            cols=2,
+            spacing=dp(10),
+            padding=dp(10),
+            size_hint_y=None
+        )
+        
+        # Season selector
+        self.season_tabs = SeasonTabs(
+            size_hint_y=None,
+            height=dp(40)
+        )
+        
+        # Suggestions grid
+        self.suggestions_grid = SuggestionsGrid()
+        
+        self.container.add_widget(self.season_tabs)
+        self.container.add_widget(self.suggestions_grid)
+        self.add_widget(self.container)
+
+
+# Caminho: views/widgets/shopping_history.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, DictProperty
+from kivy.metrics import dp
+
+class ShoppingHistory(BoxLayout):
+    history_entries = ListProperty([])
+    spending_trends = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(12)
+        self._setup_history_view()
+        
+    def _setup_history_view(self):
+        # Timeline view
+        self.timeline = HistoryTimeline(
+            size_hint_y=0.4
+        )
+        
+        # Statistics panel
+        self.stats_panel = HistoryStats(
+            size_hint_y=0.3
+        )
+        
+        # Search and filters
+        self.search_filters = HistoryFilters(
+            size_hint_y=0.2
+        )
+        
+        # Export options
+        self.export_options = ExportTools(
+            size_hint_y=0.1
+        )
+        
+        self.add_widget(self.timeline)
+        self.add_widget(self.stats_panel)
+        self.add_widget(self.search_filters)
+        self.add_widget(self.export_options)
+
+
+# Caminho: views/widgets/shopping_list_share.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, StringProperty
+from kivy.metrics import dp
+
+class ShoppingListShare(BoxLayout):
+    shared_users = ListProperty([])
+    share_link = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self.padding = dp(10)
+        self._setup_share_interface()
+        
+    def _setup_share_interface(self):
+        # Share link generator
+        self.link_box = ShareLinkBox(
+            size_hint_y=None,
+            height=dp(50)
+        )
+        
+        # User permissions grid
+        self.permissions_grid = PermissionsGrid(
+            size_hint_y=None,
+            height=dp(200)
+        )
+        
+        # Quick share buttons
+        self.share_buttons = QuickShareBar(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        self.add_widget(self.link_box)
+        self.add_widget(self.permissions_grid)
+        self.add_widget(self.share_buttons)
+
+
+# Caminho: views/widgets/shopping_list_stats.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, ListProperty
+from kivy.metrics import dp
+from kivy.garden.graph import Graph, MeshLinePlot
+
+class ShoppingListStats(BoxLayout):
+    spending_data = DictProperty({})
+    categories = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.padding = dp(16)
+        self.spacing = dp(16)
+        self._setup_charts()
+        
+    def _setup_charts(self):
+        # Spending over time graph
+        self.spending_graph = Graph(
+            xlabel='Time',
+            ylabel='Amount',
+            x_ticks_minor=5,
+            x_ticks_major=25,
+            y_ticks_major=10,
+            y_grid_label=True,
+            x_grid_label=True,
+            padding=5,
+            x_grid=True,
+            y_grid=True,
+            xmin=-0,
+            xmax=100,
+            ymin=-0,
+            ymax=100
+        )
+        
+        # Category distribution pie chart
+        self.category_chart = PieChart(
+            size_hint_y=None,
+            height=dp(200)
+        )
+        
+        self.add_widget(self.spending_graph)
+        self.add_widget(self.category_chart)
+
+
+# Caminho: views/widgets/shopping_list_template.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, StringProperty
+from kivy.metrics import dp
+
+class ShoppingListTemplate(BoxLayout):
+    templates = ListProperty([])
+    current_template = StringProperty('')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(12)
+        self.padding = dp(15)
+        self._setup_template_manager()
+        
+    def _setup_template_manager(self):
+        # Template list with preview
+        self.template_list = TemplateList(
+            size_hint_y=0.6
+        )
+        
+        # Template editor
+        self.editor = TemplateEditor(
+            size_hint_y=0.4
+        )
+        
+        # Quick actions bar
+        self.actions = QuickActions(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        self.add_widget(self.template_list)
+        self.add_widget(self.editor)
+        self.add_widget(self.actions)
+
+
+# Caminho: views/widgets/shopping_mode_view.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, NumericProperty
+from kivy.metrics import dp
+from kivy.clock import Clock
+
+class ShoppingModeView(BoxLayout):
+    items = ListProperty([])
+    total_spent = NumericProperty(0)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(10)
+        self.padding = dp(15)
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Progress bar
+        self.progress = ProgressBar(
+            size_hint_y=None,
+            height=dp(20)
+        )
+        
+        # Items remaining counter
+        self.counter = Label(
+            size_hint_y=None,
+            height=dp(30)
+        )
+        
+        # Main shopping list
+        self.list_view = ShoppingList()
+        
+        # Total spent display
+        self.total_display = TotalDisplay()
+        
+        # Add all components
+        self.add_widget(self.progress)
+        self.add_widget(self.counter)
+        self.add_widget(self.list_view)
+        self.add_widget(self.total_display)
+
+
+# Caminho: views/widgets/smart_card.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import NumericProperty, ListProperty
+from kivy.metrics import dp
+from kivy.clock import Clock
+
+class SmartCart(BoxLayout):
+    current_total = NumericProperty(0)
+    cart_items = ListProperty([])
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(10)
+        self._setup_cart()
+        
+    def _setup_cart(self):
+        # Running total display
+        self.total_display = TotalDisplay(
+            size_hint_y=0.2
+        )
+        
+        # Live cart contents
+        self.cart_view = CartView(
+            size_hint_y=0.5
+        )
+        
+        # Budget progress
+        self.budget_tracker = BudgetProgress(
+            size_hint_y=0.2
+        )
+        
+        # Quick checkout button
+        self.checkout_button = CheckoutButton(
+            size_hint_y=0.1
+        )
+        
+        self.add_widget(self.total_display)
+        self.add_widget(self.cart_view)
+        self.add_widget(self.budget_tracker)
+        self.add_widget(self.checkout_button)
+
+
+# Caminho: views/widgets/smart_labels.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, DictProperty
+from kivy.metrics import dp
+
+class SmartLabels(BoxLayout):
+    labels = ListProperty([])
+    label_colors = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self._setup_label_manager()
+        
+    def _setup_label_manager(self):
+        # Label creator
+        self.label_creator = LabelCreator(
+            size_hint_y=0.3
+        )
+        
+        # Label cloud
+        self.label_cloud = LabelCloud(
+            size_hint_y=0.4
+        )
+        
+        # Quick filters
+        self.quick_filters = QuickFilters(
+            size_hint_y=0.3
+        )
+        
+        self.add_widget(self.label_creator)
+        self.add_widget(self.label_cloud)
+        self.add_widget(self.quick_filters)
+
+
+# Caminho: views/widgets/smart_pantry.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, NumericProperty
+from kivy.metrics import dp
+from kivy.clock import Clock
+
+class SmartPantry(BoxLayout):
+    inventory = DictProperty({})
+    restock_threshold = NumericProperty(20)  # percentage
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(10)
+        self._setup_pantry_tracker()
+        
+    def _setup_pantry_tracker(self):
+        # Inventory grid
+        self.inventory_grid = InventoryGrid(
+            size_hint_y=0.5
+        )
+        
+        # Low stock alerts
+        self.alerts = LowStockAlerts(
+            size_hint_y=0.2
+        )
+        
+        # Quick restock button
+        self.restock_button = QuickRestockButton(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        # Usage statistics
+        self.usage_stats = UsageStatistics(
+            size_hint_y=0.3
+        )
+        
+        self.add_widget(self.inventory_grid)
+        self.add_widget(self.alerts)
+        self.add_widget(self.usage_stats)
+        self.add_widget(self.restock_button)
+
+
+# Caminho: views/widgets/smart_reminders.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, BooleanProperty
+from kivy.clock import Clock
+from kivy.metrics import dp
+
+class SmartReminders(BoxLayout):
+    reminders = ListProperty([])
+    notifications_enabled = BooleanProperty(True)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(10)
+        self._setup_reminders()
+        
+    def _setup_reminders(self):
+        # Reminder cards container
+        self.reminder_list = ReminderList()
+        
+        # Quick add reminder
+        self.quick_add = QuickAddReminder(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        # Settings panel
+        self.settings = ReminderSettings(
+            size_hint_y=None,
+            height=dp(120)
+        )
+        
+        self.add_widget(self.reminder_list)
+        self.add_widget(self.quick_add)
+        self.add_widget(self.settings)
+
+
+# Caminho: views/widgets/smart_suggestions.py
+from kivy.uix.gridlayout import GridLayout
+from kivy.properties import ListProperty, DictProperty
+from kivy.metrics import dp
+from kivy.clock import Clock
+
+class SmartSuggestions(GridLayout):
+    suggestions = ListProperty([])
+    usage_patterns = DictProperty({})
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.cols = 2
+        self.spacing = dp(10)
+        self.padding = dp(10)
+        self.size_hint_y = None
+        self._setup_suggestions()
+        
+    def _setup_suggestions(self):
+        for suggestion in self.suggestions:
+            card = SuggestionCard(
+                item=suggestion,
+                on_select=self._add_to_list
+            )
+            self.add_widget(card)
+            
+    def update_suggestions(self, recent_items):
+        """Updates suggestions based on shopping patterns"""
+        self._analyze_patterns(recent_items)
+        self._refresh_display()
+        
+    def _analyze_patterns(self, items):
+        """Analyzes shopping patterns to improve suggestions"""
+        for item in items:
+            if item.name in self.usage_patterns:
+                self.usage_patterns[item.name]['frequency'] += 1
+            else:
+                self.usage_patterns[item.name] = {'frequency': 1}
+
+
+# Caminho: views/widgets/status_bar.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import NumericProperty, StringProperty
+from kivy.metrics import dp
+from kivy.uix.label import Label
+
+class StatusBar(BoxLayout):
+    total_items = NumericProperty(0)
+    total_cost = NumericProperty(0.0)
+    status = StringProperty('Active')
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'horizontal'
+        self.size_hint_y = None
+        self.height = dp(40)
+        self.padding = [dp(8)]
+        self.spacing = dp(10)
+        
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Items counter
+        self.items_label = Label(size_hint_x=0.3)
+        
+        # Total cost
+        self.cost_label = Label(size_hint_x=0.4)
+        
+        # Status indicator
+        self.status_label = Label(size_hint_x=0.3)
+        
+        self.add_widget(self.items_label)
+        self.add_widget(self.cost_label)
+        self.add_widget(self.status_label)
+        
+    def update_display(self):
+        self.items_label.text = f'Items: {self.total_items}'
+        self.cost_label.text = f'Total: ${self.total_cost:.2f}'
+        self.status_label.text = f'Status: {self.status}'
+
+
+# Caminho: views/widgets/store_locator.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import ListProperty, NumericProperty
+from kivy.metrics import dp
+
+class StoreLocator(BoxLayout):
+    nearby_stores = ListProperty([])
+    search_radius = NumericProperty(5.0)  # kilometers
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(12)
+        self._setup_locator()
+        
+    def _setup_locator(self):
+        # Map view
+        self.map_view = StoreMapView(
+            size_hint_y=0.5
+        )
+        
+        # Store list
+        self.store_list = NearbyStoreList(
+            size_hint_y=0.3
+        )
+        
+        # Filter options
+        self.filters = StoreFilters(
+            size_hint_y=0.2
+        )
+        
+        # Distance slider
+        self.radius_slider = RadiusSlider(
+            size_hint_y=None,
+            height=dp(48)
+        )
+        
+        self.add_widget(self.map_view)
+        self.add_widget(self.store_list)
+        self.add_widget(self.filters)
+        self.add_widget(self.radius_slider)
+
+
+# Caminho: views/widgets/swipeable_list_item.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import NumericProperty, BooleanProperty, ObjectProperty
+from kivy.metrics import dp
+from kivy.animation import Animation
+
+class SwipeableListItem(BoxLayout):
+    swipe_distance = NumericProperty(0)
+    is_swiping = BooleanProperty(False)
+    on_delete = ObjectProperty(None)
+    on_edit = ObjectProperty(None)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'horizontal'
+        self.size_hint_y = None
+        self.height = dp(72)
+        self._touch_x = 0
+        self._setup_layout()
+        
+    def _setup_layout(self):
+        # Main content
+        self.content = BoxLayout()
+        
+        # Action buttons (revealed on swipe)
+        self.actions = BoxLayout(
+            size_hint_x=None,
+            width=dp(120)
+        )
+        
+        self.edit_btn = Button(text='Edit')
+        self.delete_btn = Button(text='Delete')
+        
+        self.actions.add_widget(self.edit_btn)
+        self.actions.add_widget(self.delete_btn)
+        
+        self.add_widget(self.content)
+        self.add_widget(self.actions)
+        
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            self._touch_x = touch.x
+            self.is_swiping = True
+            return True
+        return super().on_touch_down(touch)
+        
+    def on_touch_move(self, touch):
+        if self.is_swiping:
+            distance = touch.x - self._touch_x
+            self.swipe_distance = max(-120, min(0, distance))
+            return True
+        return super().on_touch_move(touch)
+        
+    def on_touch_up(self, touch):
+        if self.is_swiping:
+            if self.swipe_distance < -60:
+                self._complete_swipe()
+            else:
+                self._reset_swipe()
+            self.is_swiping = False
+            return True
+        return super().on_touch_up(touch)
+        
+    def _complete_swipe(self):
+        Animation(swipe_distance=-120, d=0.2).start(self)
+        
+    def _reset_swipe(self):
+        Animation(swipe_distance=0, d=0.2).start(self)
+
+
+# Caminho: views/widgets/unit_converter.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import DictProperty, StringProperty
+from kivy.metrics import dp
+
+class UnitConverter(BoxLayout):
+    conversion_rates = DictProperty({
+        'weight': {
+            'kg': {'g': 1000, 'oz': 35.274, 'lb': 2.20462},
+            'g': {'kg': 0.001, 'oz': 0.035274, 'lb': 0.00220462},
+            'oz': {'g': 28.3495, 'kg': 0.0283495, 'lb': 0.0625},
+            'lb': {'g': 453.592, 'kg': 0.453592, 'oz': 16}
+        },
+        'volume': {
+            'l': {'ml': 1000, 'fl_oz': 33.814, 'gal': 0.264172},
+            'ml': {'l': 0.001, 'fl_oz': 0.033814, 'gal': 0.000264172},
+            'fl_oz': {'ml': 29.5735, 'l': 0.0295735, 'gal': 0.0078125},
+            'gal': {'ml': 3785.41, 'l': 3.78541, 'fl_oz': 128}
+        }
+    })
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self._setup_converter()
+        
+    def _setup_converter(self):
+        # Unit selection spinners
+        self.unit_selectors = UnitSelectors(
+            size_hint_y=0.3
+        )
+        
+        # Conversion input/output
+        self.converter_display = ConverterDisplay(
+            size_hint_y=0.4
+        )
+        
+        # Quick conversion buttons
+        self.quick_convert = QuickConvertButtons(
+            size_hint_y=0.3
+        )
+        
+        self.add_widget(self.unit_selectors)
+        self.add_widget(self.converter_display)
+        self.add_widget(self.quick_convert)
+
+
+# Caminho: views/widgets/voice_input_handler.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import StringProperty, BooleanProperty
+from kivy.clock import Clock
+from kivy.metrics import dp
+
+class VoiceInputHandler(BoxLayout):
+    status = StringProperty('ready')
+    is_listening = BooleanProperty(False)
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'horizontal'
+        self.size_hint_y = None
+        self.height = dp(56)
+        self._setup_interface()
+        
+    def _setup_interface(self):
+        # Microphone button
+        self.mic_button = IconButton(
+            icon='microphone',
+            size_hint_x=None,
+            width=dp(56)
+        )
+        self.mic_button.bind(on_release=self.toggle_listening)
+        
+        # Status display
+        self.status_label = Label(
+            text='Tap to speak'
+        )
+        
+        # Animation widget
+        self.wave_display = AudioWaveform(
+            size_hint_x=0.7
+        )
+        
+        self.add_widget(self.mic_button)
+        self.add_widget(self.wave_display)
+        self.add_widget(self.status_label)
+
+
+# Caminho: views/widgets/weighted_items.py
+from kivy.uix.boxlayout import BoxLayout
+from kivy.properties import NumericProperty, DictProperty
+from kivy.metrics import dp
+
+class WeightedItems(BoxLayout):
+    price_per_unit = NumericProperty(0)
+    total_weight = NumericProperty(0)
+    weight_units = DictProperty({
+        'kg': 1.0,
+        'g': 0.001,
+        'lb': 0.453592,
+        'oz': 0.0283495
+    })
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.spacing = dp(15)
+        self._setup_weight_calculator()
+        
+    def _setup_weight_calculator(self):
+        # Weight input
+        self.weight_input = WeightInput(
+            size_hint_y=0.3
+        )
+        
+        # Unit price calculator
+        self.price_calculator = PriceCalculator(
+            size_hint_y=0.3
+        )
+        
+        # Comparison tool
+        self.comparison_tool = UnitPriceComparison(
+            size_hint_y=0.3
+        )
+        
+        # Quick calculate button
+        self.calculate_button = CalculateButton(
+            size_hint_y=0.1
+        )
+        
+        self.add_widget(self.weight_input)
+        self.add_widget(self.price_calculator)
+        self.add_widget(self.comparison_tool)
+        self.add_widget(self.calculate_button)
+
+

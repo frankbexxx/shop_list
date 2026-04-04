@@ -1,0 +1,22 @@
+{
+    "categories": [
+        {
+            "id": "1",
+            "name": "Groceries",
+            "icon": "grocery",
+            "color": "#4CAF50"
+        },
+        {
+            "id": "2",
+            "name": "Household",
+            "icon": "home",
+            "color": "#2196F3"
+        },
+        {
+            "id": "3",
+            "name": "Electronics",
+            "icon": "devices",
+            "color": "#9C27B0"
+        }
+    ]
+}
