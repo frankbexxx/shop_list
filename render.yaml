@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: market-flow
+    env: docker
+    plan: free
+    autoDeploy: true

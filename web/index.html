@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Market Flow</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <p class="eyebrow">Supermarket Ready</p>
+          <h1>Market Flow</h1>
+          <p class="subtitle">Listas práticas, rápidas e organizadas por corredor para o dia a dia.</p>
+        </div>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Listas</h2>
+            <button id="new-list-button" class="ghost-button">Nova</button>
+          </div>
+          <div id="lists" class="list-stack"></div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Sugestões</h2>
+          </div>
+          <div id="suggestions" class="tag-cloud"></div>
+        </section>
+      </aside>
+
+      <main class="content">
+        <header class="hero">
+          <div>
+            <p class="eyebrow">Modo compras</p>
+            <h2 id="active-list-name">Lista</h2>
+            <p id="active-list-meta" class="subtitle"></p>
+          </div>
+          <div class="hero-actions">
+            <button id="duplicate-list-button" class="ghost-button">Duplicar</button>
+            <button id="archive-list-button" class="ghost-button danger">Arquivar</button>
+          </div>
+        </header>
+
+        <section class="stats-grid">
+          <article class="stat-card">
+            <span>Estimativa</span>
+            <strong id="estimated-total">EUR 0.00</strong>
+          </article>
+          <article class="stat-card">
+            <span>Orçamento restante</span>
+            <strong id="budget-remaining">EUR 0.00</strong>
+          </article>
+          <article class="stat-card">
+            <span>Conclusão</span>
+            <strong id="completion-rate">0%</strong>
+          </article>
+          <article class="stat-card">
+            <span>Corredores</span>
+            <strong id="aisle-count">0</strong>
+          </article>
+        </section>
+
+        <section class="panel form-panel">
+          <div class="panel-heading">
+            <h2>Adicionar produto</h2>
+            <p>Entrada rápida para usar no telemóvel.</p>
+          </div>
+          <form id="item-form" class="item-form">
+            <input name="name" placeholder="Produto" required>
+            <input name="quantity" type="number" step="0.1" min="0.1" value="1" placeholder="Qtd">
+            <input name="unit" placeholder="Unidade" value="unit">
+            <input name="category" placeholder="Categoria" value="Pantry">
+            <input name="aisle" placeholder="Corredor" value="General">
+            <input name="estimated_price" type="number" step="0.01" min="0" value="0" placeholder="Preco">
+            <select name="priority">
+              <option value="1">Urgente</option>
+              <option value="2" selected>Normal</option>
+              <option value="3">Baixa</option>
+            </select>
+            <input name="note" placeholder="Nota opcional">
+            <button type="submit" class="primary-button">Adicionar</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <h2>Produtos</h2>
+            <p>Toque para avançar o estado do produto durante a compra.</p>
+          </div>
+          <div id="items" class="items-grid"></div>
+        </section>
+      </main>
+    </div>
+
+    <dialog id="list-dialog">
+      <form method="dialog" id="list-form" class="list-form">
+        <h3>Nova lista</h3>
+        <input name="name" placeholder="Nome da lista" required>
+        <input name="store_name" placeholder="Supermercado">
+        <input name="budget" type="number" step="0.01" min="0" value="0" placeholder="Orcamento">
+        <textarea name="notes" placeholder="Notas"></textarea>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-list-button" class="ghost-button">Cancelar</button>
+          <button type="submit" class="primary-button">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
