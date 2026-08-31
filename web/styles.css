@@ -414,7 +414,9 @@ textarea {
 }
 
 .items-grid {
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
 }
 
 .item-card {
@@ -565,6 +567,115 @@ dialog::backdrop {
   }
 }
 
+.today-summary {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  font-weight: 700;
+}
+
+.catalog-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  align-items: flex-end;
+  margin-bottom: var(--space-lg);
+}
+
+.catalog-search {
+  flex: 1;
+  min-width: min(100%, 220px);
+}
+
+.catalog-search input {
+  width: 100%;
+  min-height: var(--touch-min);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 12px 14px;
+}
+
+.catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.catalog-group-title,
+.item-group-title {
+  margin: 0 0 var(--space-sm);
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.catalog-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  width: 100%;
+  min-height: var(--touch-min);
+  margin-bottom: var(--space-sm);
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.catalog-item.is-selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 16%, var(--color-surface));
+  box-shadow: inset 3px 0 0 var(--color-primary);
+}
+
+.catalog-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 2px solid var(--color-border);
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.catalog-item.is-selected .catalog-check {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.catalog-item-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.catalog-item-copy small {
+  color: var(--color-text-muted);
+}
+
+.item-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.qty-stepper {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
 @media (min-width: 768px) {
   .stats-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -574,7 +685,12 @@ dialog::backdrop {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .items-grid {
+  .item-group {
+    display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  .item-group-title {
+    grid-column: 1 / -1;
   }
 }

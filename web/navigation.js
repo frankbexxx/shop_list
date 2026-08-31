@@ -98,6 +98,10 @@ function navigate(screenId) {
     window.ShoppingTheme.renderThemePicker();
   }
 
+  if (typeof window.ShoppingNav.onScreen === "function") {
+    window.ShoppingNav.onScreen(navState.currentScreen);
+  }
+
   window.scrollTo(0, 0);
 }
 

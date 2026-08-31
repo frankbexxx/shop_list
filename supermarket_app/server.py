@@ -40,8 +40,23 @@ class ShoppingApplication:
                 query = get_query(environ)
                 limit = int((query.get("limit") or ["12"])[0])
                 return json_response(start_response, {"suggestions": self.service.suggestions(limit)})
+            if path == "/api/products" and method == "GET":
+                return json_response(start_response, {"products": self.service.list_products(get_query(environ))})
+            if path == "/api/products" and method == "POST":
+                product = self.service.create_product(parse_json_body(environ))
+                status = "201 Created" if product.pop("_created", True) else "200 OK"
+                return json_response(start_response, product, status)
 
             parts = parse_path_params(path)
+            if len(parts) >= 3 and parts[0] == "api" and parts[1] == "products":
+                product_id = int(parts[2])
+                if len(parts) == 3 and method == "GET":
+                    return json_response(start_response, self.service.get_product(product_id))
+                if len(parts) == 3 and method == "PATCH":
+                    return json_response(start_response, self.service.update_product(product_id, parse_json_body(environ)))
+                if len(parts) == 3 and method == "DELETE":
+                    return json_response(start_response, self.service.deactivate_product(product_id))
+
             if len(parts) >= 3 and parts[0] == "api" and parts[1] == "lists":
                 list_id = int(parts[2])
                 if len(parts) == 3 and method == "GET":
@@ -54,11 +69,14 @@ class ShoppingApplication:
                 if len(parts) == 4 and parts[3] == "duplicate" and method == "POST":
                     return json_response(start_response, self.service.duplicate_list(list_id), "201 Created")
                 if len(parts) == 4 and parts[3] == "items" and method == "POST":
-                    return json_response(
-                        start_response,
-                        self.service.create_item(list_id, parse_json_body(environ)),
-                        "201 Created",
-                    )
+                    item = self.service.create_item(list_id, parse_json_body(environ))
+                    status = "200 OK" if item.get("merged") else "201 Created"
+                    return json_response(start_response, item, status)
+                if len(parts) == 5 and parts[3] == "products" and method == "POST":
+                    product_id = int(parts[4])
+                    item = self.service.add_product_to_list(list_id, product_id, parse_json_body(environ))
+                    status = "200 OK" if item.get("merged") else "201 Created"
+                    return json_response(start_response, item, status)
 
             if len(parts) >= 3 and parts[0] == "api" and parts[1] == "items":
                 item_id = int(parts[2])

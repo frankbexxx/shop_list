@@ -37,13 +37,13 @@
             <li>
               <button type="button" class="hub-card" data-navigate="general">
                 <span class="hub-card-label">Lista Geral</span>
-                <span class="hub-card-hint">Todos os produtos que costumas comprar</span>
+                <span class="hub-card-hint" id="home-general-hint">Todos os produtos que costumas comprar</span>
               </button>
             </li>
             <li>
               <button type="button" class="hub-card" data-navigate="today">
                 <span class="hub-card-label">Comprar Hoje</span>
-                <span class="hub-card-hint">Preparar ou continuar a compra actual</span>
+                <span class="hub-card-hint" id="home-today-hint">Preparar ou continuar a compra actual</span>
               </button>
             </li>
             <li>
@@ -62,7 +62,14 @@
         </section>
 
         <section class="shell-screen" data-screen="general" hidden aria-hidden="true" aria-label="Lista Geral">
-          <p class="placeholder-copy">Todos os produtos do utilizador aparecerão aqui.</p>
+          <div class="catalog-toolbar">
+            <label class="field catalog-search">
+              <span>Pesquisar</span>
+              <input id="product-search" type="search" placeholder="Pesquisar produtos..." autocomplete="off">
+            </label>
+            <button type="button" id="new-product-button" class="primary-button">+ Novo produto</button>
+          </div>
+          <div id="catalog" class="catalog-list"></div>
         </section>
 
         <section class="shell-screen shell-screen--wide" data-screen="today" hidden aria-hidden="true" aria-label="Comprar Hoje">
@@ -80,6 +87,8 @@
             </div>
             <div id="suggestions" class="tag-cloud"></div>
           </section>
+
+          <p id="today-summary" class="today-summary" hidden></p>
 
           <header class="hero">
             <div>
@@ -129,15 +138,29 @@
               </label>
               <label class="field">
                 <span>Unidade</span>
-                <input name="unit" value="unit">
+                <input name="unit" value="un">
               </label>
               <label class="field">
                 <span>Categoria</span>
-                <input name="category" value="Pantry">
+                <select name="category">
+                  <option value="Mercearia" selected>Mercearia</option>
+                  <option value="Fruta">Fruta</option>
+                  <option value="Legumes">Legumes</option>
+                  <option value="Laticínios">Laticínios</option>
+                  <option value="Charcutaria">Charcutaria</option>
+                  <option value="Carne">Carne</option>
+                  <option value="Peixe">Peixe</option>
+                  <option value="Congelados">Congelados</option>
+                  <option value="Padaria">Padaria</option>
+                  <option value="Bebidas">Bebidas</option>
+                  <option value="Limpeza">Limpeza</option>
+                  <option value="Higiene">Higiene</option>
+                  <option value="Vários">Vários</option>
+                </select>
               </label>
               <label class="field">
                 <span>Corredor</span>
-                <input name="aisle" value="General">
+                <input name="aisle" value="Geral">
               </label>
               <label class="field">
                 <span>Preço estimado</span>
@@ -155,7 +178,7 @@
                 <span>Nota</span>
                 <input name="note" placeholder="Opcional">
               </label>
-              <button type="submit" class="primary-button field-wide">Adicionar</button>
+              <button type="submit" class="primary-button field-wide">+ Adicionar produto</button>
             </form>
           </section>
 
@@ -244,6 +267,54 @@
       </nav>
     </div>
 
+    <dialog id="product-dialog">
+      <form method="dialog" id="product-form" class="list-form">
+        <h3>Novo produto</h3>
+        <label class="field">
+          <span>Nome</span>
+          <input name="name" required>
+        </label>
+        <label class="field">
+          <span>Categoria</span>
+          <select name="category">
+            <option value="Mercearia" selected>Mercearia</option>
+            <option value="Fruta">Fruta</option>
+            <option value="Legumes">Legumes</option>
+            <option value="Laticínios">Laticínios</option>
+            <option value="Charcutaria">Charcutaria</option>
+            <option value="Carne">Carne</option>
+            <option value="Peixe">Peixe</option>
+            <option value="Congelados">Congelados</option>
+            <option value="Padaria">Padaria</option>
+            <option value="Bebidas">Bebidas</option>
+            <option value="Limpeza">Limpeza</option>
+            <option value="Higiene">Higiene</option>
+            <option value="Vários">Vários</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Subcategoria</span>
+          <input name="subcategory" placeholder="Opcional">
+        </label>
+        <label class="field">
+          <span>Unidade default</span>
+          <input name="default_unit" value="un">
+        </label>
+        <label class="field">
+          <span>Quantidade default</span>
+          <input name="default_quantity" type="number" step="0.1" min="0.1" value="1">
+        </label>
+        <label class="field">
+          <span>Preço estimado default</span>
+          <input name="default_estimated_price" type="number" step="0.01" min="0" value="0">
+        </label>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-product-button" class="ghost-button">Cancelar</button>
+          <button type="submit" class="primary-button">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
     <dialog id="list-dialog">
       <form method="dialog" id="list-form" class="list-form">
         <h3>Nova lista</h3>
@@ -273,5 +344,6 @@
     <script src="/static/theme.js"></script>
     <script src="/static/navigation.js"></script>
     <script src="/static/app.js"></script>
+    <script src="/static/catalog.js"></script>
   </body>
 </html>

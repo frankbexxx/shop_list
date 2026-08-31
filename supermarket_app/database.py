@@ -62,5 +62,32 @@ class Database:
                     times_used INTEGER NOT NULL DEFAULT 0,
                     last_used_at TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS products (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'Vários',
+                    subcategory TEXT NOT NULL DEFAULT '',
+                    default_unit TEXT NOT NULL DEFAULT 'un',
+                    default_quantity REAL NOT NULL DEFAULT 1,
+                    default_estimated_price REAL NOT NULL DEFAULT 0,
+                    default_priority INTEGER NOT NULL DEFAULT 2,
+                    notes TEXT NOT NULL DEFAULT '',
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    last_used_at TEXT,
+                    times_used INTEGER NOT NULL DEFAULT 0
+                );
+
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_nocase
+                    ON products(name COLLATE NOCASE);
                 """
             )
+            self._ensure_column(connection, "shopping_items", "product_id", "INTEGER")
+
+    def _ensure_column(self, connection, table: str, column: str, definition: str) -> None:
+        rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
+        if any(row["name"] == column for row in rows):
+            return
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
