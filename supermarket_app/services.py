@@ -1,3 +1,4 @@
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -57,6 +58,17 @@ def canonicalize_category(value: str) -> str:
         return "Vários"
     mapped = CATEGORY_MAP.get(cleaned.lower())
     return mapped or cleaned
+
+
+def optional_money(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip().replace(" ", "").replace(",", ".")
+        if cleaned == "":
+            return None
+        value = cleaned
+    return round(float(value), 2)
 
 
 def _table_exists(connection, name: str) -> bool:
@@ -150,20 +162,21 @@ class ShoppingService:
 
     def dashboard(self) -> dict[str, Any]:
         lists = self.list_lists()
-        active_list_id = lists[0]["id"] if lists else None
+        active = next((row for row in lists if row["status"] == "active"), None)
+        active_list_id = active["id"] if active else None
         today = None
-        if active_list_id:
+        if active:
             today = {
-                "item_count": lists[0]["item_count"] or 0,
-                "pending_count": lists[0]["pending_count"],
-                "in_cart_count": lists[0]["in_cart_count"],
-                "purchased_count": lists[0]["purchased_count"],
-                "commerce_type_id": lists[0].get("commerce_type_id"),
-                "store_id": lists[0].get("store_id"),
-                "commerce_type_name": lists[0].get("commerce_type_name"),
-                "location_store_name": lists[0].get("location_store_name"),
-                "location_label": lists[0].get("location_label"),
-                "location_short": lists[0].get("location_short"),
+                "item_count": active["item_count"] or 0,
+                "pending_count": active["pending_count"],
+                "in_cart_count": active["in_cart_count"],
+                "purchased_count": active["purchased_count"],
+                "commerce_type_id": active.get("commerce_type_id"),
+                "store_id": active.get("store_id"),
+                "commerce_type_name": active.get("commerce_type_name"),
+                "location_store_name": active.get("location_store_name"),
+                "location_label": active.get("location_label"),
+                "location_short": active.get("location_short"),
             }
         return {
             "lists": lists,
@@ -172,6 +185,7 @@ class ShoppingService:
             "product_count": self.product_count(active_only=True),
             "today": today,
             "locations": self.location_counts(),
+            "history": self.history_summary(),
         }
 
     def product_count(self, active_only: bool = True) -> int:
@@ -228,8 +242,9 @@ class ShoppingService:
             """
             params = [*params, *CATEGORY_ORDER]
             rows = connection.execute(sql, params).fetchall()
-            products = [self._serialize_product(row) for row in rows]
-            return attach_product_contexts(connection, products)
+            products = attach_product_contexts(connection, [self._serialize_product(row) for row in rows])
+            self._attach_product_insights(connection, products)
+            return products
 
     def create_product(self, payload: dict[str, Any]) -> dict[str, Any]:
         data = self._coerce_product(payload)
@@ -257,7 +272,9 @@ class ShoppingService:
             row = connection.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
             if row is None:
                 raise KeyError("Product not found")
-            return attach_product_contexts(connection, [self._serialize_product(row)])[0]
+            products = attach_product_contexts(connection, [self._serialize_product(row)])
+            self._attach_product_insights(connection, products)
+            return products[0]
 
     def update_product(self, product_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         current = self.get_product(product_id)
@@ -333,7 +350,12 @@ class ShoppingService:
                     SUM(CASE WHEN i.status = 'purchased' THEN 1 ELSE 0 END) AS purchased_count,
                     SUM(CASE WHEN i.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
                     SUM(CASE WHEN i.status = 'in_cart' THEN 1 ELSE 0 END) AS in_cart_count,
-                    COALESCE(SUM(i.estimated_price * i.quantity), 0) AS estimated_total
+                    COALESCE(SUM(i.estimated_price * i.quantity), 0) AS estimated_total,
+                    (
+                        SELECT h.id FROM purchase_history h
+                        WHERE h.source_list_id = l.id
+                        LIMIT 1
+                    ) AS history_id
                 FROM shopping_lists l
                 LEFT JOIN commerce_types c ON c.id = l.commerce_type_id
                 LEFT JOIN stores s ON s.id = l.store_id
@@ -378,7 +400,12 @@ class ShoppingService:
                     SUM(CASE WHEN i.status = 'purchased' THEN 1 ELSE 0 END) AS purchased_count,
                     SUM(CASE WHEN i.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
                     SUM(CASE WHEN i.status = 'in_cart' THEN 1 ELSE 0 END) AS in_cart_count,
-                    COALESCE(SUM(i.estimated_price * i.quantity), 0) AS estimated_total
+                    COALESCE(SUM(i.estimated_price * i.quantity), 0) AS estimated_total,
+                    (
+                        SELECT h.id FROM purchase_history h
+                        WHERE h.source_list_id = l.id
+                        LIMIT 1
+                    ) AS history_id
                 FROM shopping_lists l
                 LEFT JOIN commerce_types c ON c.id = l.commerce_type_id
                 LEFT JOIN stores s ON s.id = l.store_id
@@ -463,6 +490,238 @@ class ShoppingService:
         with self.database.connect() as connection:
             connection.execute("DELETE FROM shopping_lists WHERE id = ?", (list_id,))
 
+    def history_summary(self) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            if not _table_exists(connection, "purchase_history"):
+                return {"count": 0, "last_completed_at": None, "last_store_name": ""}
+            row = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS count,
+                    MAX(completed_at) AS last_completed_at
+                FROM purchase_history
+                """
+            ).fetchone()
+            latest = connection.execute(
+                """
+                SELECT store_name, commerce_type_name, store_id, commerce_type_id
+                FROM purchase_history
+                ORDER BY completed_at DESC, id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+        return {
+            "count": int(row["count"] or 0),
+            "last_completed_at": row["last_completed_at"],
+            "last_store_name": (latest["store_name"] if latest else "") or "",
+            "last_commerce_type_name": (latest["commerce_type_name"] if latest else "") or "",
+            "last_store_id": latest["store_id"] if latest else None,
+            "last_commerce_type_id": latest["commerce_type_id"] if latest else None,
+        }
+
+    def complete_list(self, list_id: int) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            existing = connection.execute(
+                "SELECT id FROM purchase_history WHERE source_list_id = ?",
+                (list_id,),
+            ).fetchone()
+            if existing is not None:
+                return self._complete_payload(connection, int(existing["id"]))
+
+            listed = self._list_row(connection, list_id)
+            items = connection.execute(
+                """
+                SELECT *
+                FROM shopping_items
+                WHERE list_id = ?
+                ORDER BY position ASC, id ASC
+                """,
+                (list_id,),
+            ).fetchall()
+            if not items:
+                raise ValueError("A lista está vazia")
+
+            now = utc_now()
+            type_id = listed["commerce_type_id"]
+            store_id = listed["store_id"]
+            commerce_type_name = listed["commerce_type_name"] or ""
+            store_name = listed["location_store_name"] or ""
+            estimated_total = round(
+                sum(float(item["quantity"] or 0) * float(item["estimated_price"] or 0) for item in items),
+                2,
+            )
+            priced = 0
+            unpriced = 0
+            actual_total = 0.0
+            snapshots = []
+            for position, item in enumerate(items, start=1):
+                snapshot = self._history_item_snapshot(connection, item, position, now)
+                snapshots.append(snapshot)
+                if snapshot["actual_unit_price"] is None:
+                    unpriced += 1
+                else:
+                    priced += 1
+                    actual_total += snapshot["actual_line_total"] or 0
+            actual_total = round(actual_total, 2) if priced else None
+
+            try:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO purchase_history (
+                        source_list_id, name, completed_at, commerce_type_id, store_id,
+                        commerce_type_name, store_name, estimated_total, actual_total, notes, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        list_id,
+                        listed["name"],
+                        now,
+                        type_id,
+                        store_id,
+                        commerce_type_name,
+                        store_name,
+                        estimated_total,
+                        actual_total,
+                        listed["notes"] or "",
+                        now,
+                    ),
+                )
+                history_id = int(cursor.lastrowid)
+            except sqlite3.IntegrityError:
+                existing = connection.execute(
+                    "SELECT id FROM purchase_history WHERE source_list_id = ?",
+                    (list_id,),
+                ).fetchone()
+                if existing is None:
+                    raise
+                return self._complete_payload(connection, int(existing["id"]))
+
+            for snapshot in snapshots:
+                connection.execute(
+                    """
+                    INSERT INTO purchase_history_items (
+                        purchase_history_id, product_id, product_name, category, subcategory,
+                        quantity, unit, estimated_price, actual_unit_price, actual_line_total,
+                        status, aisle, note, position, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        history_id,
+                        snapshot["product_id"],
+                        snapshot["product_name"],
+                        snapshot["category"],
+                        snapshot["subcategory"],
+                        snapshot["quantity"],
+                        snapshot["unit"],
+                        snapshot["estimated_price"],
+                        snapshot["actual_unit_price"],
+                        snapshot["actual_line_total"],
+                        snapshot["status"],
+                        snapshot["aisle"],
+                        snapshot["note"],
+                        snapshot["position"],
+                        now,
+                    ),
+                )
+
+            connection.execute(
+                "UPDATE shopping_lists SET status = 'archived', updated_at = ? WHERE id = ?",
+                (now, list_id),
+            )
+            return self._complete_payload(connection, history_id)
+
+    def list_history(self, query: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
+        query = query or {}
+        clauses: list[str] = []
+        params: list[Any] = []
+        store_raw = (query.get("store_id") or [""])[0].strip()
+        type_raw = (query.get("commerce_type_id") or [""])[0].strip()
+        from_raw = (query.get("from") or [""])[0].strip()
+        to_raw = (query.get("to") or [""])[0].strip()
+        if store_raw:
+            clauses.append("h.store_id = ?")
+            params.append(int(store_raw))
+        if type_raw:
+            clauses.append("h.commerce_type_id = ?")
+            params.append(int(type_raw))
+        if from_raw:
+            clauses.append("h.completed_at >= ?")
+            params.append(self._history_bound(from_raw, end=False))
+        if to_raw:
+            clauses.append("h.completed_at <= ?")
+            params.append(self._history_bound(to_raw, end=True))
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT
+                    h.*,
+                    (SELECT COUNT(*) FROM purchase_history_items i WHERE i.purchase_history_id = h.id) AS item_count,
+                    (
+                        SELECT COUNT(*) FROM purchase_history_items i
+                        WHERE i.purchase_history_id = h.id AND i.status = 'purchased'
+                    ) AS purchased_count,
+                    (
+                        SELECT COUNT(*) FROM purchase_history_items i
+                        WHERE i.purchase_history_id = h.id AND i.actual_unit_price IS NOT NULL
+                    ) AS priced_item_count,
+                    (
+                        SELECT COUNT(*) FROM purchase_history_items i
+                        WHERE i.purchase_history_id = h.id AND i.actual_unit_price IS NULL
+                    ) AS unpriced_item_count
+                FROM purchase_history h
+                {where}
+                ORDER BY h.completed_at DESC, h.id DESC
+                """,
+                params,
+            ).fetchall()
+        return [self._serialize_history_summary(row) for row in rows]
+
+    def get_history(self, history_id: int) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            return self._history_detail(connection, history_id)
+
+    def reuse_history(self, history_id: int) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            history = self._history_detail(connection, history_id)
+            now = utc_now()
+            cursor = connection.execute(
+                """
+                INSERT INTO shopping_lists (
+                    name, store_name, budget, notes, status, commerce_type_id, store_id, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
+                """,
+                (
+                    history["name"],
+                    "",
+                    0,
+                    history.get("notes") or "",
+                    history.get("commerce_type_id"),
+                    history.get("store_id"),
+                    now,
+                    now,
+                ),
+            )
+            list_id = int(cursor.lastrowid)
+            for position, item in enumerate(history["items"], start=1):
+                product_id = self._resolve_product_for_reuse(connection, item)
+                payload = self._coerce_item(
+                    {
+                        "name": item["product_name"],
+                        "quantity": item["quantity"],
+                        "unit": item["unit"],
+                        "category": item["category"] or "Vários",
+                        "aisle": item["aisle"] or "Geral",
+                        "estimated_price": item["estimated_price"] or 0,
+                        "note": item.get("note") or "",
+                    }
+                )
+                self._insert_item(connection, list_id, payload, position, product_id, increment_usage=True)
+        return self.get_list(list_id)
+
     def create_item(self, list_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         data = self._coerce_item(payload)
         merged = False
@@ -532,13 +791,17 @@ class ShoppingService:
         merged = {**current, **payload}
         data = self._coerce_item(merged)
         status = payload.get("status", current["status"])
+        if "actual_unit_price" in payload:
+            actual_unit_price = optional_money(payload.get("actual_unit_price"))
+        else:
+            actual_unit_price = optional_money(current.get("actual_unit_price"))
         now = utc_now()
         with self.database.connect() as connection:
             connection.execute(
                 """
                 UPDATE shopping_items
                 SET name = ?, quantity = ?, unit = ?, category = ?, aisle = ?, estimated_price = ?,
-                    priority = ?, note = ?, status = ?, updated_at = ?
+                    priority = ?, note = ?, status = ?, actual_unit_price = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -551,6 +814,7 @@ class ShoppingService:
                     data.priority,
                     data.note,
                     status,
+                    actual_unit_price,
                     now,
                     item_id,
                 ),
@@ -1220,12 +1484,238 @@ class ShoppingService:
             self._register_product_use(connection, product_id)
         return int(cursor.lastrowid)
 
+    def _list_row(self, connection, list_id: int):
+        row = connection.execute(
+            """
+            SELECT
+                l.*,
+                c.name AS commerce_type_name,
+                s.name AS location_store_name
+            FROM shopping_lists l
+            LEFT JOIN commerce_types c ON c.id = l.commerce_type_id
+            LEFT JOIN stores s ON s.id = l.store_id
+            WHERE l.id = ?
+            """,
+            (list_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("List not found")
+        return row
+
+    def _history_item_snapshot(self, connection, item, position: int, now: str) -> dict[str, Any]:
+        product_id = item["product_id"]
+        subcategory = ""
+        if product_id:
+            product = connection.execute(
+                "SELECT subcategory FROM products WHERE id = ?",
+                (product_id,),
+            ).fetchone()
+            if product is not None:
+                subcategory = product["subcategory"] or ""
+        actual_unit_price = optional_money(item["actual_unit_price"] if "actual_unit_price" in item.keys() else None)
+        quantity = float(item["quantity"] or 0)
+        actual_line_total = round(quantity * actual_unit_price, 2) if actual_unit_price is not None else None
+        return {
+            "product_id": product_id,
+            "product_name": item["name"],
+            "category": item["category"] or "",
+            "subcategory": subcategory,
+            "quantity": quantity,
+            "unit": item["unit"] or "un",
+            "estimated_price": float(item["estimated_price"] or 0),
+            "actual_unit_price": actual_unit_price,
+            "actual_line_total": actual_line_total,
+            "status": item["status"] or "pending",
+            "aisle": item["aisle"] or "",
+            "note": item["note"] or "",
+            "position": position,
+            "created_at": now,
+        }
+
+    def _complete_payload(self, connection, history_id: int) -> dict[str, Any]:
+        detail = self._history_detail(connection, history_id)
+        return {
+            "history_id": detail["id"],
+            "completed_at": detail["completed_at"],
+            "item_count": detail["item_count"],
+            "purchased_count": detail["purchased_count"],
+            "actual_total": detail["actual_total"],
+            "priced_item_count": detail["priced_item_count"],
+            "unpriced_item_count": detail["unpriced_item_count"],
+            "estimated_total": detail["estimated_total"],
+            "source_list_id": detail["source_list_id"],
+        }
+
+    def _history_detail(self, connection, history_id: int) -> dict[str, Any]:
+        row = connection.execute(
+            "SELECT * FROM purchase_history WHERE id = ?",
+            (history_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError("History not found")
+        items = connection.execute(
+            """
+            SELECT *
+            FROM purchase_history_items
+            WHERE purchase_history_id = ?
+            ORDER BY position ASC, id ASC
+            """,
+            (history_id,),
+        ).fetchall()
+        serialized = [self._serialize_history_item(item) for item in items]
+        purchased = sum(1 for item in serialized if item["status"] == "purchased")
+        priced = sum(1 for item in serialized if item["actual_unit_price"] is not None)
+        return {
+            "id": row["id"],
+            "source_list_id": row["source_list_id"],
+            "name": row["name"],
+            "completed_at": row["completed_at"],
+            "commerce_type_id": row["commerce_type_id"],
+            "store_id": row["store_id"],
+            "commerce_type_name": row["commerce_type_name"] or "",
+            "store_name": row["store_name"] or "",
+            "estimated_total": round(row["estimated_total"] or 0, 2),
+            "actual_total": None if row["actual_total"] is None else round(row["actual_total"], 2),
+            "notes": row["notes"] or "",
+            "created_at": row["created_at"],
+            "item_count": len(serialized),
+            "purchased_count": purchased,
+            "priced_item_count": priced,
+            "unpriced_item_count": len(serialized) - priced,
+            "items": serialized,
+        }
+
+    def _serialize_history_summary(self, row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "completed_at": row["completed_at"],
+            "store_name": row["store_name"] or "",
+            "commerce_type_name": row["commerce_type_name"] or "",
+            "commerce_type_id": row["commerce_type_id"],
+            "store_id": row["store_id"],
+            "item_count": int(row["item_count"] or 0),
+            "purchased_count": int(row["purchased_count"] or 0),
+            "estimated_total": round(row["estimated_total"] or 0, 2),
+            "actual_total": None if row["actual_total"] is None else round(row["actual_total"], 2),
+            "priced_item_count": int(row["priced_item_count"] or 0) if "priced_item_count" in row.keys() else 0,
+            "unpriced_item_count": int(row["unpriced_item_count"] or 0) if "unpriced_item_count" in row.keys() else 0,
+        }
+
+    def _serialize_history_item(self, row) -> dict[str, Any]:
+        actual_unit_price = optional_money(row["actual_unit_price"])
+        quantity = float(row["quantity"] or 0)
+        stored_total = row["actual_line_total"]
+        if actual_unit_price is None:
+            actual_line_total = None
+        elif stored_total is not None:
+            actual_line_total = round(float(stored_total), 2)
+        else:
+            actual_line_total = round(quantity * actual_unit_price, 2)
+        return {
+            "id": row["id"],
+            "purchase_history_id": row["purchase_history_id"],
+            "product_id": row["product_id"],
+            "product_name": row["product_name"],
+            "category": row["category"] or "",
+            "subcategory": row["subcategory"] or "",
+            "quantity": quantity,
+            "unit": row["unit"] or "un",
+            "estimated_price": float(row["estimated_price"] or 0),
+            "actual_unit_price": actual_unit_price,
+            "actual_line_total": actual_line_total,
+            "status": row["status"],
+            "aisle": row["aisle"] or "",
+            "note": row["note"] or "",
+            "position": row["position"],
+        }
+
+    def _history_bound(self, value: str, *, end: bool) -> str:
+        if "T" in value or " " in value:
+            return value
+        return f"{value}T23:59:59.999999+00:00" if end else f"{value}T00:00:00+00:00"
+
+    def _resolve_product_for_reuse(self, connection, item: dict[str, Any]) -> int:
+        product_id = item.get("product_id")
+        if product_id:
+            row = connection.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+            if row is not None:
+                if not row["is_active"]:
+                    connection.execute(
+                        "UPDATE products SET is_active = 1, updated_at = ? WHERE id = ?",
+                        (utc_now(), product_id),
+                    )
+                return int(row["id"])
+        found = self._find_product_row(connection, item.get("product_name") or "")
+        if found is not None:
+            if not found["is_active"]:
+                connection.execute(
+                    "UPDATE products SET is_active = 1, updated_at = ? WHERE id = ?",
+                    (utc_now(), int(found["id"])),
+                )
+            return int(found["id"])
+        payload = ProductPayload(
+            name=normalize_name(item.get("product_name") or "") or "Novo produto",
+            category=canonicalize_category(item.get("category") or "Vários"),
+            subcategory=(item.get("subcategory") or "").strip(),
+            default_unit=normalize_text(item.get("unit") or "", "un"),
+            default_quantity=float(item.get("quantity") or 1),
+            default_estimated_price=float(item.get("estimated_price") or 0),
+        )
+        return self._insert_product(connection, payload)
+
+    def _attach_product_insights(self, connection, products: list[dict[str, Any]]) -> None:
+        if not products or not _table_exists(connection, "purchase_history_items"):
+            for product in products:
+                product.setdefault("last_purchased_at", None)
+                product.setdefault("last_actual_price", None)
+                product.setdefault("purchase_count", 0)
+            return
+        ids = [int(product["id"]) for product in products]
+        placeholders = ",".join("?" * len(ids))
+        stats = connection.execute(
+            f"""
+            SELECT
+                i.product_id,
+                MAX(CASE WHEN i.status = 'purchased' THEN h.completed_at END) AS last_purchased_at,
+                SUM(CASE WHEN i.status = 'purchased' THEN 1 ELSE 0 END) AS purchase_count
+            FROM purchase_history_items i
+            JOIN purchase_history h ON h.id = i.purchase_history_id
+            WHERE i.product_id IN ({placeholders})
+            GROUP BY i.product_id
+            """,
+            ids,
+        ).fetchall()
+        stats_by_id = {int(row["product_id"]): row for row in stats if row["product_id"] is not None}
+        prices = connection.execute(
+            f"""
+            SELECT i.product_id, i.actual_unit_price
+            FROM purchase_history_items i
+            JOIN purchase_history h ON h.id = i.purchase_history_id
+            WHERE i.product_id IN ({placeholders}) AND i.actual_unit_price IS NOT NULL
+            ORDER BY h.completed_at DESC, i.id DESC
+            """,
+            ids,
+        ).fetchall()
+        last_price: dict[int, float] = {}
+        for row in prices:
+            product_id = int(row["product_id"])
+            if product_id not in last_price:
+                last_price[product_id] = round(float(row["actual_unit_price"]), 2)
+        for product in products:
+            product_id = int(product["id"])
+            row = stats_by_id.get(product_id)
+            product["last_purchased_at"] = row["last_purchased_at"] if row else None
+            product["purchase_count"] = int(row["purchase_count"] or 0) if row else 0
+            product["last_actual_price"] = last_price.get(product_id)
+
     def _serialize_list(self, row) -> dict[str, Any]:
         keys = row.keys()
         commerce_type_id = row["commerce_type_id"] if "commerce_type_id" in keys else None
         store_id = row["store_id"] if "store_id" in keys else None
         commerce_type_name = row["commerce_type_name"] if "commerce_type_name" in keys else None
         location_store_name = row["location_store_name"] if "location_store_name" in keys else None
+        history_id = row["history_id"] if "history_id" in keys else None
         if location_store_name and commerce_type_name:
             location_label = f"{location_store_name} · {commerce_type_name}"
         elif location_store_name:
@@ -1247,6 +1737,7 @@ class ShoppingService:
             "location_store_name": location_store_name,
             "location_label": location_label,
             "location_short": location_store_name or commerce_type_name or "Todos",
+            "history_id": history_id,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "item_count": row["item_count"] or 0,
@@ -1259,6 +1750,9 @@ class ShoppingService:
     def _serialize_item(self, row) -> dict[str, Any]:
         data = dict(row)
         data["line_total"] = round(data["quantity"] * data["estimated_price"], 2)
+        actual = optional_money(data.get("actual_unit_price"))
+        data["actual_unit_price"] = actual
+        data["actual_line_total"] = round(data["quantity"] * actual, 2) if actual is not None else None
         return data
 
     def _serialize_product(self, row) -> dict[str, Any]:
@@ -1280,8 +1774,13 @@ class ShoppingService:
         purchased = sum(1 for item in items if item["status"] == "purchased")
         in_cart = sum(1 for item in items if item["status"] == "in_cart")
         pending = sum(1 for item in items if item["status"] == "pending")
+        priced = [item for item in items if item.get("actual_unit_price") is not None]
+        actual_total = round(sum(item["actual_line_total"] or 0 for item in priced), 2) if priced else None
         return {
             "estimated_total": total,
+            "actual_total": actual_total,
+            "priced_item_count": len(priced),
+            "unpriced_item_count": len(items) - len(priced),
             "budget_remaining": round(budget - total, 2),
             "purchased_count": purchased,
             "in_cart_count": in_cart,

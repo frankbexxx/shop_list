@@ -54,6 +54,8 @@ class ShoppingApplication:
                 return json_response(start_response, {"stores": self.service.list_stores(get_query(environ))})
             if path == "/api/stores" and method == "POST":
                 return json_response(start_response, self.service.create_store(parse_json_body(environ)), "201 Created")
+            if path == "/api/history" and method == "GET":
+                return json_response(start_response, {"history": self.service.list_history(get_query(environ))})
 
             parts = parse_path_params(path)
             if len(parts) >= 3 and parts[0] == "api" and parts[1] == "commerce-types":
@@ -104,6 +106,8 @@ class ShoppingApplication:
                 if len(parts) == 3 and method == "DELETE":
                     self.service.delete_list(list_id)
                     return json_response(start_response, {"deleted": True})
+                if len(parts) == 4 and parts[3] == "complete" and method == "POST":
+                    return json_response(start_response, self.service.complete_list(list_id))
                 if len(parts) == 4 and parts[3] == "duplicate" and method == "POST":
                     return json_response(start_response, self.service.duplicate_list(list_id), "201 Created")
                 if len(parts) == 4 and parts[3] == "items" and method == "POST":
@@ -115,6 +119,13 @@ class ShoppingApplication:
                     item = self.service.add_product_to_list(list_id, product_id, parse_json_body(environ))
                     status = "200 OK" if item.get("merged") else "201 Created"
                     return json_response(start_response, item, status)
+
+            if len(parts) >= 3 and parts[0] == "api" and parts[1] == "history":
+                history_id = int(parts[2])
+                if len(parts) == 3 and method == "GET":
+                    return json_response(start_response, self.service.get_history(history_id))
+                if len(parts) == 4 and parts[3] == "reuse" and method == "POST":
+                    return json_response(start_response, self.service.reuse_history(history_id), "201 Created")
 
             if len(parts) >= 3 and parts[0] == "api" and parts[1] == "items":
                 item_id = int(parts[2])

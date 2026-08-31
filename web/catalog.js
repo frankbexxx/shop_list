@@ -162,8 +162,35 @@ function resetProductForm() {
   form.default_estimated_price.value = 0;
   form.category.value = "Mercearia";
   document.getElementById("product-dialog-title").textContent = "Novo produto";
+  const insights = document.getElementById("product-insights");
+  if (insights) {
+    insights.hidden = true;
+    insights.textContent = "";
+  }
   const ctx = window.ShoppingApp.shopState.catalogContext;
   renderTypeCheckboxes(ctx?.kind === "type" && ctx.id ? [ctx.id] : []);
+}
+
+function renderProductInsights(product) {
+  const box = document.getElementById("product-insights");
+  if (!box) return;
+  const lines = [];
+  if (product.last_purchased_at) {
+    lines.push(`Última compra: ${window.ShoppingApp.formatDayMonth(product.last_purchased_at)} ${new Date(product.last_purchased_at).getFullYear()}`);
+  }
+  if (product.last_actual_price != null) {
+    lines.push(`Último preço: ${window.ShoppingApp.currency.format(product.last_actual_price)}`);
+  }
+  if (product.purchase_count) {
+    lines.push(`Comprado: ${product.purchase_count} ${product.purchase_count === 1 ? "vez" : "vezes"}`);
+  }
+  if (!lines.length) {
+    box.hidden = true;
+    box.textContent = "";
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = lines.join("<br>");
 }
 
 function openProductDialog(product) {
@@ -180,6 +207,7 @@ function openProductDialog(product) {
     form.default_quantity.value = product.default_quantity || 1;
     form.default_estimated_price.value = product.default_estimated_price || 0;
     renderTypeCheckboxes(product.commerce_type_ids || []);
+    renderProductInsights(product);
   }
   dialog.showModal();
 }

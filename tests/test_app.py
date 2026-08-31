@@ -1,5 +1,6 @@
 import io
 import json
+import sqlite3
 import unittest
 from pathlib import Path
 from uuid import uuid4
@@ -67,6 +68,7 @@ class WSGITestCase(unittest.TestCase):
             "/static/app.js",
             "/static/catalog.js",
             "/static/locations.js",
+            "/static/history.js",
         ):
             response = self.request("GET", path)
             self.assertEqual(response["status"], "200 OK", path)
@@ -136,6 +138,7 @@ class WSGITestCase(unittest.TestCase):
                 "stores": len(stores),
                 "relations": relations,
                 "list_context": (listed.get("commerce_type_id"), listed.get("store_id")),
+                "history": json.loads(self.request("GET", "/api/history")["body"])["history"],
             }
 
         first = snapshot()
@@ -743,3 +746,378 @@ class WSGITestCase(unittest.TestCase):
         after = json.loads(self.request("GET", f"/api/lists/{listed['id']}")["body"])
         self.assertEqual(after["store_id"], continente["id"])
         self.assertEqual(after["commerce_type_id"], continente["commerce_type_id"])
+
+    def _create_trip(self, name="Compra teste", store_slug="continente"):
+        store = self._by_slug(self._stores(), store_slug)
+        return json.loads(self.request("POST", "/api/lists", {"name": name, "store_id": store["id"]})["body"])
+
+    def _add_item(self, list_id, payload):
+        return json.loads(self.request("POST", f"/api/lists/{list_id}/items", payload)["body"])
+
+    def _hard_delete_product(self, product_id):
+        connection = sqlite3.connect(self.db_path)
+        try:
+            connection.execute("PRAGMA foreign_keys = ON")
+            connection.execute("DELETE FROM products WHERE id = ?", (product_id,))
+            connection.commit()
+        finally:
+            connection.close()
+
+    def test_history_schema_and_actual_price_column(self):
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            tables = {
+                row["name"]
+                for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+            }
+            self.assertIn("purchase_history", tables)
+            self.assertIn("purchase_history_items", tables)
+            item_cols = {row["name"] for row in connection.execute("PRAGMA table_info(shopping_items)").fetchall()}
+            history_cols = {row["name"] for row in connection.execute("PRAGMA table_info(purchase_history)").fetchall()}
+            history_item_cols = {
+                row["name"] for row in connection.execute("PRAGMA table_info(purchase_history_items)").fetchall()
+            }
+            self.assertIn("actual_unit_price", item_cols)
+            self.assertIn("source_list_id", history_cols)
+            self.assertIn("commerce_type_name", history_cols)
+            self.assertIn("store_name", history_cols)
+            self.assertIn("product_name", history_item_cols)
+            self.assertIn("actual_line_total", history_item_cols)
+        finally:
+            connection.close()
+
+        dashboard = json.loads(self.request("GET", "/api/dashboard")["body"])
+        listed = json.loads(self.request("GET", f"/api/lists/{dashboard['active_list_id']}")["body"])
+        self.assertTrue(listed["items"])
+        self.assertIsNone(listed["items"][0].get("actual_unit_price"))
+        history = json.loads(self.request("GET", "/api/history")["body"])
+        self.assertEqual(history["history"], [])
+
+    def test_complete_purchase_creates_snapshot(self):
+        listed = self._create_trip("Compra Continente")
+        milk = self._add_item(
+            listed["id"],
+            {"name": "Leite sem lactose", "quantity": 2, "unit": "un", "estimated_price": 1.8},
+        )
+        bananas = self._add_item(
+            listed["id"],
+            {"name": "Bananas", "quantity": 1.2, "unit": "kg", "estimated_price": 2.0},
+        )
+        detergent = self._add_item(
+            listed["id"],
+            {"name": "Detergente roupa", "quantity": 1, "estimated_price": 8.99},
+        )
+        self.request("POST", f"/api/items/{milk['id']}/cycle")
+        self.request("POST", f"/api/items/{milk['id']}/cycle")
+        self.request("POST", f"/api/items/{bananas['id']}/cycle")
+        self.request("POST", f"/api/items/{bananas['id']}/cycle")
+        self.request("PATCH", f"/api/items/{milk['id']}", {"actual_unit_price": 1.89})
+        self.request("PATCH", f"/api/items/{bananas['id']}", {"actual_unit_price": "2,15"})
+        before_product = json.loads(self.request("GET", f"/api/products/{milk['product_id']}")["body"])
+        times_used = before_product["times_used"]
+
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        self.assertEqual(completed["item_count"], 3)
+        self.assertEqual(completed["purchased_count"], 2)
+        self.assertEqual(completed["priced_item_count"], 2)
+        self.assertEqual(completed["unpriced_item_count"], 1)
+        self.assertEqual(completed["actual_total"], 6.36)
+
+        history = json.loads(self.request("GET", f"/api/history/{completed['history_id']}")["body"])
+        self.assertEqual(history["store_name"], "Continente")
+        self.assertEqual(history["commerce_type_name"], "Supermercado")
+        names = [item["product_name"] for item in history["items"]]
+        self.assertEqual(len(history["items"]), 3)
+        self.assertIn("Leite sem lactose", names)
+        self.assertIn("Detergente roupa", names)
+        pending = next(item for item in history["items"] if item["product_name"] == "Detergente roupa")
+        self.assertEqual(pending["status"], "pending")
+        milk_row = next(item for item in history["items"] if item["product_name"] == "Leite sem lactose")
+        self.assertEqual(milk_row["status"], "purchased")
+        self.assertEqual(milk_row["actual_unit_price"], 1.89)
+        self.assertEqual(milk_row["actual_line_total"], 3.78)
+
+        archived = json.loads(self.request("GET", f"/api/lists/{listed['id']}")["body"])
+        self.assertEqual(archived["status"], "archived")
+        self.assertEqual(archived["history_id"], completed["history_id"])
+        after_product = json.loads(self.request("GET", f"/api/products/{milk['product_id']}")["body"])
+        self.assertEqual(after_product["times_used"], times_used)
+        dashboard = json.loads(self.request("GET", "/api/dashboard")["body"])
+        self.assertNotEqual(dashboard["active_list_id"], listed["id"])
+
+    def test_complete_purchase_is_idempotent(self):
+        listed = self._create_trip("Duplo")
+        item = self._add_item(listed["id"], {"name": "Arroz"})
+        used_before = json.loads(self.request("GET", f"/api/products/{item['product_id']}")["body"])["times_used"]
+        first = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        snapshot = json.loads(self.request("GET", f"/api/history/{first['history_id']}")["body"])
+        second = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        self.assertEqual(first["history_id"], second["history_id"])
+        self.assertEqual(first["completed_at"], second["completed_at"])
+        history = json.loads(self.request("GET", "/api/history")["body"])["history"]
+        matches = [row for row in history if row["id"] == first["history_id"]]
+        self.assertEqual(len(matches), 1)
+        after = json.loads(self.request("GET", f"/api/history/{first['history_id']}")["body"])
+        self.assertEqual(len(after["items"]), 1)
+        self.assertEqual(after["items"][0]["product_name"], snapshot["items"][0]["product_name"])
+        self.assertEqual(after["completed_at"], snapshot["completed_at"])
+        self.assertEqual(after["store_name"], snapshot["store_name"])
+        used_after = json.loads(self.request("GET", f"/api/products/{item['product_id']}")["body"])["times_used"]
+        self.assertEqual(used_after, used_before)
+
+    def test_complete_partial_prices(self):
+        listed = self._create_trip("Parcial")
+        priced = self._add_item(listed["id"], {"name": "Produto A", "quantity": 2, "estimated_price": 9.99})
+        self._add_item(listed["id"], {"name": "Produto B", "quantity": 3, "estimated_price": 4.50})
+        self.request("PATCH", f"/api/items/{priced['id']}", {"actual_unit_price": 1.50})
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        self.assertEqual(completed["actual_total"], 3.00)
+        self.assertEqual(completed["priced_item_count"], 1)
+        self.assertEqual(completed["unpriced_item_count"], 1)
+        detail = json.loads(self.request("GET", f"/api/history/{completed['history_id']}")["body"])
+        self.assertEqual(detail["actual_total"], 3.00)
+        unpriced = next(item for item in detail["items"] if item["product_name"] == "Produto B")
+        self.assertIsNone(unpriced["actual_unit_price"])
+        self.assertIsNone(unpriced["actual_line_total"])
+
+    def test_actual_total_rounding(self):
+        listed = self._create_trip("Arredondar")
+        item = self._add_item(listed["id"], {"name": "Iogurte", "quantity": 3, "estimated_price": 1})
+        self.request("PATCH", f"/api/items/{item['id']}", {"actual_unit_price": 1.10})
+        patched = json.loads(self.request("GET", f"/api/lists/{listed['id']}")["body"])
+        line = next(row for row in patched["items"] if row["id"] == item["id"])
+        self.assertEqual(line["actual_line_total"], 3.30)
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        self.assertEqual(completed["actual_total"], 3.30)
+        detail = json.loads(self.request("GET", f"/api/history/{completed['history_id']}")["body"])
+        self.assertEqual(detail["actual_total"], 3.30)
+        self.assertEqual(detail["items"][0]["actual_line_total"], 3.30)
+
+    def test_complete_mixed_statuses(self):
+        listed = self._create_trip("Misto")
+        bought = self._add_item(listed["id"], {"name": "Leite"})
+        self._add_item(listed["id"], {"name": "Detergente"})
+        self.request("POST", f"/api/items/{bought['id']}/cycle")
+        self.request("POST", f"/api/items/{bought['id']}/cycle")
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        history = json.loads(self.request("GET", f"/api/history/{completed['history_id']}")["body"])
+        statuses = {item["product_name"]: item["status"] for item in history["items"]}
+        self.assertEqual(statuses["Leite"], "purchased")
+        self.assertEqual(statuses["Detergente"], "pending")
+        self.assertEqual(completed["purchased_count"], 1)
+        self.assertEqual(completed["item_count"], 2)
+
+    def test_history_snapshot_survives_renames(self):
+        listed = self._create_trip("Snapshot")
+        item = self._add_item(
+            listed["id"],
+            {"name": "Leite sem lactose", "quantity": 2, "estimated_price": 1.8, "category": "Laticínios"},
+        )
+        self.request("PATCH", f"/api/items/{item['id']}", {"actual_unit_price": 1.89})
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        history_id = completed["history_id"]
+        continente = self._by_slug(self._stores(), "continente")
+        self.request(
+            "PATCH",
+            f"/api/products/{item['product_id']}",
+            {"name": "Leite de aveia", "category": "Bebidas"},
+        )
+        self.request("PATCH", f"/api/stores/{continente['id']}", {"name": "Continente Modelo"})
+        self.request("PATCH", f"/api/commerce-types/{continente['commerce_type_id']}", {"name": "Mega"})
+        history = json.loads(self.request("GET", f"/api/history/{history_id}")["body"])
+        self.assertEqual(history["store_name"], "Continente")
+        self.assertEqual(history["commerce_type_name"], "Supermercado")
+        self.assertEqual(history["items"][0]["product_name"], "Leite sem lactose")
+        self.assertEqual(history["items"][0]["category"], "Laticínios")
+        live = json.loads(self.request("GET", f"/api/products/{item['product_id']}")["body"])
+        self.assertEqual(live["name"], "Leite de aveia")
+        self.assertEqual(live["category"], "Bebidas")
+        store = json.loads(self.request("GET", f"/api/stores/{continente['id']}")["body"])
+        self.assertEqual(store["name"], "Continente Modelo")
+        ctype = json.loads(self.request("GET", f"/api/commerce-types/{continente['commerce_type_id']}")["body"])
+        self.assertEqual(ctype["name"], "Mega")
+
+    def test_history_survives_deactivating_current_entities(self):
+        listed = self._create_trip("Desactivar")
+        item = self._add_item(listed["id"], {"name": "Leite sem lactose", "category": "Laticínios"})
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        continente = self._by_slug(self._stores(), "continente")
+        self.request("DELETE", f"/api/products/{item['product_id']}")
+        self.request("DELETE", f"/api/stores/{continente['id']}")
+        self.request("DELETE", f"/api/commerce-types/{continente['commerce_type_id']}")
+        history = json.loads(self.request("GET", f"/api/history/{completed['history_id']}")["body"])
+        self.assertEqual(self.request("GET", f"/api/history/{completed['history_id']}")["status"], "200 OK")
+        self.assertEqual(history["store_name"], "Continente")
+        self.assertEqual(history["commerce_type_name"], "Supermercado")
+        self.assertEqual(len(history["items"]), 1)
+        self.assertEqual(history["items"][0]["product_name"], "Leite sem lactose")
+        listed_history = json.loads(self.request("GET", "/api/history")["body"])["history"]
+        self.assertTrue(any(row["id"] == completed["history_id"] for row in listed_history))
+
+    def test_reuse_history_creates_new_list(self):
+        listed = self._create_trip("Original")
+        milk = self._add_item(listed["id"], {"name": "Leite sem lactose", "quantity": 2, "estimated_price": 1.8})
+        bananas = self._add_item(listed["id"], {"name": "Bananas", "quantity": 1.2, "unit": "kg"})
+        self.request("POST", f"/api/items/{milk['id']}/cycle")
+        self.request("POST", f"/api/items/{milk['id']}/cycle")
+        self.request("PATCH", f"/api/items/{milk['id']}", {"actual_unit_price": 1.89})
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        original = json.loads(self.request("GET", f"/api/history/{completed['history_id']}")["body"])
+
+        reuse_response = self.request("POST", f"/api/history/{completed['history_id']}/reuse")
+        reused = json.loads(reuse_response["body"])
+        self.assertEqual(reuse_response["status"], "201 Created")
+        self.assertNotEqual(reused["id"], listed["id"])
+        self.assertEqual(reused["status"], "active")
+        self.assertEqual(reused["store_id"], original["store_id"])
+        self.assertEqual(reused["commerce_type_id"], original["commerce_type_id"])
+        self.assertEqual(len(reused["items"]), 2)
+        self.assertTrue(all(item["status"] == "pending" for item in reused["items"]))
+        self.assertTrue(all(item["actual_unit_price"] is None for item in reused["items"]))
+        product_ids = {item["product_id"] for item in reused["items"]}
+        self.assertEqual(product_ids, {milk["product_id"], bananas["product_id"]})
+        item_ids = {item["id"] for item in reused["items"]}
+        self.assertNotEqual(item_ids, {milk["id"], bananas["id"]})
+
+        after = json.loads(self.request("GET", f"/api/history/{completed['history_id']}")["body"])
+        self.assertEqual(after["items"][0]["product_name"], original["items"][0]["product_name"])
+        self.assertEqual(after["item_count"], original["item_count"])
+        self.assertEqual(len(json.loads(self.request("GET", "/api/history")["body"])["history"]), 1)
+
+    def test_reuse_reactivates_inactive_product(self):
+        listed = self._create_trip("Reactivar")
+        item = self._add_item(listed["id"], {"name": "Pilhas AA"})
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        self.request("DELETE", f"/api/products/{item['product_id']}")
+        before = json.loads(self.request("GET", "/api/products?search=Pilhas%20AA&active=all")["body"])["products"]
+        matches_before = [row for row in before if row["name"] == "Pilhas AA"]
+        self.assertEqual(len(matches_before), 1)
+        reused = json.loads(self.request("POST", f"/api/history/{completed['history_id']}/reuse")["body"])
+        self.assertEqual(reused["items"][0]["product_id"], item["product_id"])
+        self.assertEqual(reused["items"][0]["status"], "pending")
+        self.assertIsNone(reused["items"][0]["actual_unit_price"])
+        product = json.loads(self.request("GET", f"/api/products/{item['product_id']}")["body"])
+        self.assertTrue(product["is_active"])
+        after = json.loads(self.request("GET", "/api/products?search=Pilhas%20AA&active=all")["body"])["products"]
+        self.assertEqual(len([row for row in after if row["name"] == "Pilhas AA"]), 1)
+
+    def test_reuse_missing_product_reuses_normalized_name(self):
+        listed = self._create_trip("Nome equivalente")
+        item = self._add_item(listed["id"], {"name": "Leite Snapshot Unico"})
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        self._hard_delete_product(item["product_id"])
+        replacement = json.loads(
+            self.request("POST", "/api/products", {"name": "leite snapshot unico", "category": "Laticínios"})["body"]
+        )
+        reused = json.loads(self.request("POST", f"/api/history/{completed['history_id']}/reuse")["body"])
+        self.assertEqual(reused["items"][0]["product_id"], replacement["id"])
+        catalog = json.loads(self.request("GET", "/api/products?search=Leite%20Snapshot%20Unico&active=all")["body"])
+        matches = [row for row in catalog["products"] if row["name"].lower() == "leite snapshot unico"]
+        self.assertEqual(len(matches), 1)
+
+    def test_reuse_missing_product_creates_from_snapshot(self):
+        listed = self._create_trip("Recriar")
+        item = self._add_item(
+            listed["id"],
+            {"name": "Detergente Snapshot Unico", "quantity": 2, "unit": "un", "category": "Limpeza", "estimated_price": 8.99},
+        )
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        self._hard_delete_product(item["product_id"])
+        gone = self.request("GET", f"/api/products/{item['product_id']}")
+        self.assertEqual(gone["status"], "404 Not Found")
+        reused = json.loads(self.request("POST", f"/api/history/{completed['history_id']}/reuse")["body"])
+        created_id = reused["items"][0]["product_id"]
+        self.assertIsNotNone(created_id)
+        self.assertNotEqual(created_id, item["product_id"])
+        self.assertEqual(reused["items"][0]["status"], "pending")
+        self.assertIsNone(reused["items"][0]["actual_unit_price"])
+        product = json.loads(self.request("GET", f"/api/products/{created_id}")["body"])
+        self.assertEqual(product["name"], "Detergente Snapshot Unico")
+        self.assertEqual(product["category"], "Limpeza")
+        catalog = json.loads(self.request("GET", "/api/products?search=Detergente%20Snapshot%20Unico")["body"])
+        self.assertEqual(len(catalog["products"]), 1)
+
+    def test_times_used_counts_selection_not_completion(self):
+        listed = self._create_trip("Uso")
+        item = self._add_item(listed["id"], {"name": "Contador Unico"})
+        after_add = json.loads(self.request("GET", f"/api/products/{item['product_id']}")["body"])["times_used"]
+        self.assertGreaterEqual(after_add, 1)
+        self.request("POST", f"/api/lists/{listed['id']}/complete")
+        after_complete = json.loads(self.request("GET", f"/api/products/{item['product_id']}")["body"])["times_used"]
+        self.assertEqual(after_complete, after_add)
+        history = json.loads(self.request("GET", "/api/history")["body"])["history"]
+        self.request("POST", f"/api/history/{history[0]['id']}/reuse")
+        after_reuse = json.loads(self.request("GET", f"/api/products/{item['product_id']}")["body"])["times_used"]
+        self.assertEqual(after_reuse, after_add + 1)
+
+    def test_history_is_read_only(self):
+        listed = self._create_trip("Readonly")
+        self._add_item(listed["id"], {"name": "Leite"})
+        completed = json.loads(self.request("POST", f"/api/lists/{listed['id']}/complete")["body"])
+        history_id = completed["history_id"]
+        item_id = json.loads(self.request("GET", f"/api/history/{history_id}")["body"])["items"][0]["id"]
+        self.assertEqual(self.request("PATCH", f"/api/history/{history_id}", {"name": "Hack"})["status"], "404 Not Found")
+        self.assertEqual(self.request("DELETE", f"/api/history/{history_id}")["status"], "404 Not Found")
+        item_patch = self.request("PATCH", f"/api/history/items/{item_id}", {"actual_unit_price": 9})
+        self.assertIn(item_patch["status"], {"404 Not Found", "400 Bad Request"})
+        intact = json.loads(self.request("GET", f"/api/history/{history_id}")["body"])
+        self.assertEqual(intact["name"], "Readonly")
+        self.assertEqual(intact["items"][0]["product_name"], "Leite")
+
+    def test_product_purchase_insights(self):
+        first = self._create_trip("Um")
+        milk = self._add_item(first["id"], {"name": "Leite sem lactose", "quantity": 1})
+        self.request("POST", f"/api/items/{milk['id']}/cycle")
+        self.request("POST", f"/api/items/{milk['id']}/cycle")
+        self.request("PATCH", f"/api/items/{milk['id']}", {"actual_unit_price": 1.7})
+        first_complete = json.loads(self.request("POST", f"/api/lists/{first['id']}/complete")["body"])
+
+        second = self._create_trip("Dois")
+        again = self._add_item(second["id"], {"name": "Leite sem lactose", "quantity": 2})
+        self.request("POST", f"/api/items/{again['id']}/cycle")
+        self.request("POST", f"/api/items/{again['id']}/cycle")
+        self.request("PATCH", f"/api/items/{again['id']}", {"actual_unit_price": 1.89})
+        second_complete = json.loads(self.request("POST", f"/api/lists/{second['id']}/complete")["body"])
+
+        product = json.loads(self.request("GET", f"/api/products/{milk['product_id']}")["body"])
+        self.assertEqual(product["purchase_count"], 2)
+        self.assertEqual(product["last_actual_price"], 1.89)
+        self.assertEqual(product["last_purchased_at"], second_complete["completed_at"])
+        self.assertGreaterEqual(product["last_purchased_at"], first_complete["completed_at"])
+
+    def test_history_filters(self):
+        continente = self._create_trip("Cont", "continente")
+        self._add_item(continente["id"], {"name": "Leite"})
+        self.request("POST", f"/api/lists/{continente['id']}/complete")
+        leroy = self._create_trip("Leroy", "leroy-merlin")
+        self._add_item(leroy["id"], {"name": "Parafusos"})
+        self.request("POST", f"/api/lists/{leroy['id']}/complete")
+
+        stores = {row["slug"]: row for row in self._stores()}
+        types = {row["slug"]: row for row in self._commerce_types()}
+        by_store = json.loads(self.request("GET", f"/api/history?store_id={stores['continente']['id']}")["body"])["history"]
+        self.assertEqual(len(by_store), 1)
+        self.assertEqual(by_store[0]["store_name"], "Continente")
+        by_type = json.loads(
+            self.request("GET", f"/api/history?commerce_type_id={types['bricolage']['id']}")["body"]
+        )["history"]
+        self.assertEqual(len(by_type), 1)
+        self.assertEqual(by_type[0]["store_name"], "Leroy Merlin")
+
+    def test_complete_empty_list_rejected(self):
+        listed = self._create_trip("Vazia")
+        response = self.request("POST", f"/api/lists/{listed['id']}/complete")
+        self.assertEqual(response["status"], "400 Bad Request")
+        self.assertEqual(json.loads(self.request("GET", "/api/history")["body"])["history"], [])
+
+    def test_history_list_is_newest_first(self):
+        older = self._create_trip("Antiga")
+        self._add_item(older["id"], {"name": "Pão"})
+        self.request("POST", f"/api/lists/{older['id']}/complete")
+        newer = self._create_trip("Recente")
+        self._add_item(newer["id"], {"name": "Leite"})
+        self.request("POST", f"/api/lists/{newer['id']}/complete")
+        history = json.loads(self.request("GET", "/api/history")["body"])["history"]
+        self.assertGreaterEqual(len(history), 2)
+        self.assertGreaterEqual(history[0]["completed_at"], history[1]["completed_at"])

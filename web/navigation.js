@@ -41,6 +41,12 @@ const SCREENS = {
     tab: "more",
     back: "more",
   },
+  "history-detail": {
+    title: "Compra",
+    subtitle: "",
+    tab: "more",
+    back: "history",
+  },
   settings: {
     title: "Definições",
     subtitle: "Preferências da aplicação",

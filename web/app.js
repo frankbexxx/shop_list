@@ -6,10 +6,27 @@ const shopState = {
   products: [],
   productCount: 0,
   today: null,
+  history: { count: 0, last_completed_at: null, last_store_name: "" },
   commerceTypes: [],
   stores: [],
   catalogContext: { kind: "all" },
 };
+
+const MONTHS_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+const MONTHS_LONG = [
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
+];
 
 const currency = new Intl.NumberFormat("pt-PT", {
   style: "currency",
@@ -66,12 +83,14 @@ function updateHomeHints() {
   if (today) {
     const stats = shopState.today;
     if (!stats) {
-      today.textContent = "Preparar ou continuar a compra actual";
-      return;
+      today.textContent = shopState.history?.count
+        ? "Compra concluída · Preparar nova compra"
+        : "Preparar ou continuar a compra actual";
+    } else {
+      const pending = stats.pending_count || 0;
+      const place = stats.location_short && stats.location_short !== "Todos" ? ` · ${stats.location_short}` : "";
+      today.textContent = `${stats.item_count || 0} produtos · ${pending} por comprar${place}`;
     }
-    const pending = stats.pending_count || 0;
-    const place = stats.location_short && stats.location_short !== "Todos" ? ` · ${stats.location_short}` : "";
-    today.textContent = `${stats.item_count || 0} produtos · ${pending} por comprar${place}`;
   }
   const locations = document.getElementById("home-locations-hint");
   if (locations && shopState.locations) {
@@ -79,6 +98,58 @@ function updateHomeHints() {
     const stores = shopState.locations.store_count || 0;
     locations.textContent = `${types} tipos · ${stores} lojas`;
   }
+  const historyText = historyHintText(shopState.history);
+  const homeHistory = document.getElementById("home-history-hint");
+  const moreHistory = document.getElementById("more-history-hint");
+  if (homeHistory) homeHistory.textContent = historyText;
+  if (moreHistory) moreHistory.textContent = historyText;
+}
+
+function historyHintText(summary) {
+  const count = summary?.count || 0;
+  if (!count) return "Ainda sem compras concluídas";
+  const last = formatDayMonth(summary.last_completed_at);
+  const countLabel = count === 1 ? "1 compra" : `${count} compras`;
+  return last ? `${countLabel} · Última: ${last}` : countLabel;
+}
+
+function formatDayMonth(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getDate()} ${MONTHS_SHORT[date.getMonth()]}`;
+}
+
+function formatLongDate(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getDate()} ${MONTHS_LONG[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function formatHistoryDay(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return `${date.getDate()} ${MONTHS_SHORT[date.getMonth()].toUpperCase()}`;
+}
+
+function parseMoney(value) {
+  if (value == null) return null;
+  const cleaned = String(value).trim().replace(/\s/g, "").replace(",", ".");
+  if (!cleaned) return null;
+  const number = Number(cleaned);
+  if (Number.isNaN(number)) return null;
+  return Math.round(number * 100) / 100;
+}
+
+function formatMoneyInput(value) {
+  if (value == null || value === "") return "";
+  return String(value).replace(".", ",");
+}
+
+function isCompletedTrip(list) {
+  return Boolean(list?.history_id);
 }
 
 async function loadDashboard() {
@@ -89,11 +160,15 @@ async function loadDashboard() {
   shopState.productCount = dashboard.product_count || 0;
   shopState.today = dashboard.today;
   shopState.locations = dashboard.locations;
+  shopState.history = dashboard.history || { count: 0 };
   renderLists();
   renderSuggestions();
   updateHomeHints();
   if (shopState.activeListId) {
     await loadList(shopState.activeListId);
+  } else {
+    shopState.activeList = null;
+    renderTodayCompleted();
   }
 }
 
@@ -303,8 +378,31 @@ function groupItemsByCategory(items) {
   return ordered;
 }
 
+function renderTodayCompleted(message) {
+  const completed = document.getElementById("today-completed");
+  const shopping = document.getElementById("today-shopping");
+  const copy = document.getElementById("today-completed-copy");
+  if (completed) completed.hidden = false;
+  if (shopping) shopping.hidden = true;
+  if (copy) {
+    copy.textContent = message || "A lista actual passou para o histórico.";
+  }
+  const todaySummary = document.getElementById("today-summary");
+  if (todaySummary) {
+    todaySummary.hidden = false;
+    todaySummary.textContent = "Compra concluída";
+  }
+}
+
 function renderActiveList() {
-  if (!shopState.activeList) return;
+  const completed = document.getElementById("today-completed");
+  const shopping = document.getElementById("today-shopping");
+  if (!shopState.activeList || isCompletedTrip(shopState.activeList)) {
+    renderTodayCompleted();
+    return;
+  }
+  if (completed) completed.hidden = true;
+  if (shopping) shopping.hidden = false;
   const summary = shopState.activeList.summary;
   document.getElementById("active-list-name").textContent = shopState.activeList.name;
   document.getElementById("active-list-meta").textContent =
@@ -354,6 +452,10 @@ function renderItemCard(item) {
     </div>
     ${item.in_context === false ? `<p class="item-note">Fora do contexto</p>` : ""}
     ${item.note ? `<p class="item-note">${item.note}</p>` : ""}
+    <label class="field item-actual-price">
+      <span>Preço real</span>
+      <input class="actual-price-input" inputmode="decimal" placeholder="ex. 1,89" value="${formatMoneyInput(item.actual_unit_price)}">
+    </label>
     <div class="item-actions">
       <button type="button" class="ghost-button small delete-button">Remover</button>
     </div>
@@ -378,6 +480,21 @@ function renderItemCard(item) {
     });
     await refreshActiveList();
   });
+  const priceInput = article.querySelector(".actual-price-input");
+  priceInput.addEventListener("change", async () => {
+    const raw = priceInput.value.trim();
+    const actual = raw === "" ? null : parseMoney(raw);
+    if (raw !== "" && actual == null) {
+      showError("Preço real inválido");
+      priceInput.value = formatMoneyInput(item.actual_unit_price);
+      return;
+    }
+    await api(`/api/items/${item.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ actual_unit_price: actual }),
+    });
+    await refreshActiveList();
+  });
   return article;
 }
 
@@ -393,10 +510,16 @@ async function refreshActiveList() {
   shopState.suggestions = dashboard.suggestions;
   shopState.productCount = dashboard.product_count || shopState.productCount;
   shopState.today = dashboard.today;
+  shopState.history = dashboard.history || shopState.history;
   renderLists();
   renderSuggestions();
   updateHomeHints();
-  await loadList(shopState.activeListId || dashboard.active_list_id);
+  if (shopState.activeListId || dashboard.active_list_id) {
+    await loadList(shopState.activeListId || dashboard.active_list_id);
+  } else {
+    shopState.activeList = null;
+    renderTodayCompleted();
+  }
   await loadProducts();
 }
 
@@ -489,6 +612,48 @@ function setupForms() {
     });
     await loadDashboard();
   });
+
+  const completeDialog = document.getElementById("complete-dialog");
+  document.getElementById("complete-purchase-button")?.addEventListener("click", () => {
+    if (!shopState.activeList || isCompletedTrip(shopState.activeList)) return;
+    const summary = shopState.activeList.summary;
+    const pending = (summary.pending_count || 0) + (summary.in_cart_count || 0);
+    const actual = summary.actual_total;
+    const unpriced = summary.unpriced_item_count || 0;
+    const actualLine = actual == null
+      ? "Total real registado: sem preços"
+      : `Total real registado: ${currency.format(actual)}`;
+    const unpricedLine = unpriced === 1 ? "1 produto sem preço" : `${unpriced} produtos sem preço`;
+    document.getElementById("complete-summary").innerHTML = `
+      ${summary.purchased_count || 0} comprados<br>
+      ${pending} por comprar<br><br>
+      ${actualLine}<br>
+      ${unpricedLine}
+    `;
+    completeDialog.showModal();
+  });
+  document.getElementById("cancel-complete-button")?.addEventListener("click", () => completeDialog.close());
+  document.getElementById("confirm-complete-button")?.addEventListener("click", async () => {
+    if (!shopState.activeListId) return;
+    await api(`/api/lists/${shopState.activeListId}/complete`, { method: "POST" });
+    completeDialog.close();
+    shopState.activeListId = null;
+    await loadDashboard();
+    window.ShoppingHistory?.load?.();
+  });
+  document.getElementById("prepare-new-list-button")?.addEventListener("click", async () => {
+    const last = shopState.history || {};
+    const created = await api("/api/lists", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Nova compra",
+        commerce_type_id: last.last_commerce_type_id || null,
+        store_id: last.last_store_id || null,
+      }),
+    });
+    await refreshActiveList();
+    await loadList(created.id);
+  });
 }
 
 async function setListLocation(typeId, storeId) {
@@ -534,18 +699,23 @@ function renderLocationPicker() {
 window.ShoppingApp = {
   shopState,
   api,
+  currency,
   CATEGORY_ORDER,
   selectedProductIds,
   loadProducts,
   loadLocations,
   loadDashboard,
   refreshActiveList,
+  loadList,
   toggleProductOnToday,
   updateHomeHints,
   setCatalogContext,
   applyGeneralHeader,
   applyTodayHeader,
   catalogContextFromList,
+  formatDayMonth,
+  formatLongDate,
+  formatHistoryDay,
 };
 
 window.ShoppingTheme.initTheme();
@@ -563,6 +733,9 @@ window.ShoppingNav.onScreen = (screenId) => {
   }
   if (screenId === "locations" || screenId === "manage-locations") {
     window.ShoppingLocations?.render();
+  }
+  if (screenId === "history") {
+    window.ShoppingHistory?.load?.();
   }
 };
 

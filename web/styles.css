@@ -791,6 +791,94 @@ dialog::backdrop {
   padding: 12px 14px;
 }
 
+.complete-purchase-bar {
+  display: flex;
+  justify-content: stretch;
+  margin: var(--space-xl) 0 var(--space-lg);
+}
+
+.complete-purchase-bar .primary-button {
+  width: 100%;
+}
+
+.today-completed {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  margin: 0 0 var(--space-lg);
+}
+
+.today-completed[hidden],
+#today-shopping[hidden] {
+  display: none;
+}
+
+.today-completed-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.item-actual-price {
+  margin: 0 0 var(--space-sm);
+}
+
+.item-actual-price input {
+  width: 100%;
+  min-height: var(--touch-min);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-alt);
+  color: var(--color-text);
+  padding: 12px 14px;
+}
+
+.complete-summary {
+  margin: 0 0 var(--space-lg);
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.history-card .hub-card-label {
+  letter-spacing: 0.04em;
+}
+
+.history-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.history-detail-header h2 {
+  margin: 0 0 4px;
+  font-size: 1.25rem;
+}
+
+.history-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.history-item-card h3 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+}
+
+.product-insights {
+  margin: 0 0 var(--space-md);
+  padding: var(--space-sm) 0;
+  color: var(--color-text-muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 @media (min-width: 768px) {
   .stats-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));

@@ -55,7 +55,7 @@
             <li>
               <button type="button" class="hub-card" data-navigate="history">
                 <span class="hub-card-label">Histórico</span>
-                <span class="hub-card-hint">Compras anteriores</span>
+                <span class="hub-card-hint" id="home-history-hint">Ainda sem compras concluídas</span>
               </button>
             </li>
           </ul>
@@ -91,6 +91,13 @@
 
           <p id="today-summary" class="today-summary" hidden></p>
 
+          <section id="today-completed" class="today-completed" hidden>
+            <p class="today-completed-title">Compra concluída</p>
+            <p id="today-completed-copy" class="placeholder-copy">A lista actual passou para o histórico.</p>
+            <button type="button" id="prepare-new-list-button" class="primary-button">Preparar nova compra</button>
+          </section>
+
+          <div id="today-shopping">
           <header class="hero">
             <div>
               <h2 id="active-list-name">Lista</h2>
@@ -197,6 +204,11 @@
             </div>
             <div id="items" class="items-grid"></div>
           </section>
+
+          <div class="complete-purchase-bar">
+            <button type="button" id="complete-purchase-button" class="primary-button">Concluir compra</button>
+          </div>
+          </div>
         </section>
 
         <section class="shell-screen" data-screen="locations" hidden aria-hidden="true" aria-label="Locais">
@@ -215,7 +227,7 @@
             <li>
               <button type="button" class="hub-card" data-navigate="history">
                 <span class="hub-card-label">Histórico</span>
-                <span class="hub-card-hint">Compras anteriores</span>
+                <span class="hub-card-hint" id="more-history-hint">Compras anteriores</span>
               </button>
             </li>
             <li>
@@ -250,7 +262,11 @@
         </section>
 
         <section class="shell-screen" data-screen="history" hidden aria-hidden="true" aria-label="Histórico">
-          <p class="placeholder-copy">As compras anteriores aparecerão aqui.</p>
+          <div id="history-list" class="history-list"></div>
+        </section>
+
+        <section class="shell-screen" data-screen="history-detail" hidden aria-hidden="true" aria-label="Detalhe da compra">
+          <div id="history-detail" class="history-detail"></div>
         </section>
 
         <section class="shell-screen" data-screen="manage-locations" hidden aria-hidden="true" aria-label="Gerir locais">
@@ -322,6 +338,7 @@
     <dialog id="product-dialog">
       <form method="dialog" id="product-form" class="list-form">
         <h3 id="product-dialog-title">Novo produto</h3>
+        <p id="product-insights" class="product-insights" hidden></p>
         <input type="hidden" name="id" id="product-id">
         <label class="field">
           <span>Nome</span>
@@ -427,10 +444,22 @@
       </div>
     </dialog>
 
+    <dialog id="complete-dialog">
+      <form method="dialog" class="list-form">
+        <h3>Concluir compra?</h3>
+        <p id="complete-summary" class="complete-summary"></p>
+        <div class="dialog-actions">
+          <button type="button" id="cancel-complete-button" class="ghost-button">Cancelar</button>
+          <button type="button" id="confirm-complete-button" class="primary-button">Concluir</button>
+        </div>
+      </form>
+    </dialog>
+
     <script src="/static/theme.js"></script>
     <script src="/static/navigation.js"></script>
     <script src="/static/app.js"></script>
     <script src="/static/catalog.js"></script>
     <script src="/static/locations.js"></script>
+    <script src="/static/history.js"></script>
   </body>
 </html>
