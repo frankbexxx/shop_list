@@ -47,7 +47,21 @@ class WSGITestCase(unittest.TestCase):
     def test_root_serves_frontend(self):
         response = self.request("GET", "/")
         self.assertEqual(response["status"], "200 OK")
-        self.assertIn(b"Market Flow", response["body"])
+        self.assertIn(b"Shopping List", response["body"])
+        self.assertIn(b"app-shell", response["body"])
+        self.assertIn(b"bottom-nav", response["body"])
+
+    def test_shell_assets_respond(self):
+        for path in (
+            "/static/design-tokens.css",
+            "/static/themes.css",
+            "/static/styles.css",
+            "/static/theme.js",
+            "/static/navigation.js",
+            "/static/app.js",
+        ):
+            response = self.request("GET", path)
+            self.assertEqual(response["status"], "200 OK", path)
 
     def test_can_create_list_and_item(self):
         created_list = self.request(
