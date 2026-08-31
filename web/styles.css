@@ -576,6 +576,22 @@ dialog::backdrop {
   font-weight: 700;
 }
 
+.today-context-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  margin: 0 0 var(--space-lg);
+}
+
+#location-picker {
+  width: min(100%, 420px);
+}
+
+#location-picker .hub-card {
+  width: 100%;
+  margin-bottom: var(--space-md);
+}
+
 .catalog-toolbar {
   display: flex;
   flex-wrap: wrap;

@@ -158,6 +158,12 @@ class ShoppingService:
                 "pending_count": lists[0]["pending_count"],
                 "in_cart_count": lists[0]["in_cart_count"],
                 "purchased_count": lists[0]["purchased_count"],
+                "commerce_type_id": lists[0].get("commerce_type_id"),
+                "store_id": lists[0].get("store_id"),
+                "commerce_type_name": lists[0].get("commerce_type_name"),
+                "location_store_name": lists[0].get("location_store_name"),
+                "location_label": lists[0].get("location_label"),
+                "location_short": lists[0].get("location_short"),
             }
         return {
             "lists": lists,
@@ -241,6 +247,7 @@ class ShoppingService:
             else:
                 product_id = self._insert_product(connection, data)
             self._sync_product_types(connection, product_id, payload, replace=False)
+            self._sync_product_stores(connection, product_id, payload, replace=False)
         product = self.get_product(product_id)
         product["_created"] = created
         return product
@@ -286,6 +293,7 @@ class ShoppingService:
                 ),
             )
             self._sync_product_types(connection, product_id, payload, replace=True)
+            self._sync_product_stores(connection, product_id, payload, replace=True)
         return self.get_product(product_id)
 
     def deactivate_product(self, product_id: int) -> dict[str, Any]:
@@ -319,12 +327,16 @@ class ShoppingService:
                 """
                 SELECT
                     l.*,
+                    c.name AS commerce_type_name,
+                    s.name AS location_store_name,
                     COUNT(i.id) AS item_count,
                     SUM(CASE WHEN i.status = 'purchased' THEN 1 ELSE 0 END) AS purchased_count,
                     SUM(CASE WHEN i.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
                     SUM(CASE WHEN i.status = 'in_cart' THEN 1 ELSE 0 END) AS in_cart_count,
                     COALESCE(SUM(i.estimated_price * i.quantity), 0) AS estimated_total
                 FROM shopping_lists l
+                LEFT JOIN commerce_types c ON c.id = l.commerce_type_id
+                LEFT JOIN stores s ON s.id = l.store_id
                 LEFT JOIN shopping_items i ON i.list_id = l.id
                 GROUP BY l.id
                 ORDER BY CASE l.status WHEN 'active' THEN 0 ELSE 1 END, l.updated_at DESC
@@ -339,14 +351,17 @@ class ShoppingService:
             budget=float(payload.get("budget", 0) or 0),
             notes=(payload.get("notes") or "").strip(),
         )
+        type_id, store_id = self._normalize_list_context(payload)
         now = utc_now()
         with self.database.connect() as connection:
             cursor = connection.execute(
                 """
-                INSERT INTO shopping_lists (name, store_name, budget, notes, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, 'active', ?, ?)
+                INSERT INTO shopping_lists (
+                    name, store_name, budget, notes, status, commerce_type_id, store_id, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?)
                 """,
-                (data.name, data.store_name, data.budget, data.notes, now, now),
+                (data.name, data.store_name, data.budget, data.notes, type_id, store_id, now, now),
             )
             list_id = cursor.lastrowid
         return self.get_list(list_id)
@@ -357,12 +372,16 @@ class ShoppingService:
                 """
                 SELECT
                     l.*,
+                    c.name AS commerce_type_name,
+                    s.name AS location_store_name,
                     COUNT(i.id) AS item_count,
                     SUM(CASE WHEN i.status = 'purchased' THEN 1 ELSE 0 END) AS purchased_count,
                     SUM(CASE WHEN i.status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
                     SUM(CASE WHEN i.status = 'in_cart' THEN 1 ELSE 0 END) AS in_cart_count,
                     COALESCE(SUM(i.estimated_price * i.quantity), 0) AS estimated_total
                 FROM shopping_lists l
+                LEFT JOIN commerce_types c ON c.id = l.commerce_type_id
+                LEFT JOIN stores s ON s.id = l.store_id
                 LEFT JOIN shopping_items i ON i.list_id = l.id
                 WHERE l.id = ?
                 GROUP BY l.id
@@ -392,19 +411,22 @@ class ShoppingService:
                 """,
                 (list_id, *CATEGORY_ORDER),
             ).fetchall()
-        data = self._serialize_list(list_row)
-        data["items"] = [self._serialize_item(row) for row in item_rows]
-        data["summary"] = self._summarize_items(data["items"], data["budget"])
+            data = self._serialize_list(list_row)
+            data["items"] = [self._serialize_item(row) for row in item_rows]
+            self._attach_item_context_flags(connection, data["items"], data)
+            data["summary"] = self._summarize_items(data["items"], data["budget"])
         return data
 
     def update_list(self, list_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         current = self.get_list(list_id)
+        type_id, store_id = self._normalize_list_context(payload, current)
         now = utc_now()
         with self.database.connect() as connection:
             connection.execute(
                 """
                 UPDATE shopping_lists
-                SET name = ?, store_name = ?, budget = ?, notes = ?, status = ?, updated_at = ?
+                SET name = ?, store_name = ?, budget = ?, notes = ?, status = ?,
+                    commerce_type_id = ?, store_id = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -413,6 +435,8 @@ class ShoppingService:
                     float(payload.get("budget", current["budget"]) or 0),
                     (payload.get("notes", current["notes"]) or "").strip(),
                     payload.get("status", current["status"]),
+                    type_id,
+                    store_id,
                     now,
                     list_id,
                 ),
@@ -427,6 +451,8 @@ class ShoppingService:
                 "store_name": source["store_name"],
                 "budget": source["budget"],
                 "notes": source["notes"],
+                "commerce_type_id": source.get("commerce_type_id"),
+                "store_id": source.get("store_id"),
             }
         )
         for item in source["items"]:
@@ -451,6 +477,7 @@ class ShoppingService:
                 priority=data.priority,
                 notes=data.note,
             )
+            self._apply_list_learning(connection, product_id, list_id)
             product = connection.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
             canonical = ItemPayload(
                 name=product["name"],
@@ -834,6 +861,115 @@ class ShoppingService:
                 (product_id, type_id),
             )
 
+    def _sync_product_stores(self, connection, product_id: int, payload: dict[str, Any], replace: bool) -> None:
+        if "store_ids" not in payload:
+            return
+        raw_ids = payload.get("store_ids") or []
+        store_ids: list[int] = []
+        for value in raw_ids:
+            try:
+                store_ids.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        store_ids = list(dict.fromkeys(store_ids))
+        if replace:
+            connection.execute("DELETE FROM product_stores WHERE product_id = ?", (product_id,))
+        for store_id in store_ids:
+            exists = connection.execute("SELECT id FROM stores WHERE id = ?", (store_id,)).fetchone()
+            if exists is None:
+                continue
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO product_stores (product_id, store_id, priority)
+                VALUES (?, ?, 0)
+                """,
+                (product_id, store_id),
+            )
+
+    def _optional_id(self, value: Any) -> int | None:
+        if value in (None, "", 0, "0"):
+            return None
+        return int(value)
+
+    def _normalize_list_context(
+        self, payload: dict[str, Any], current: dict[str, Any] | None = None
+    ) -> tuple[int | None, int | None]:
+        current = current or {}
+        store_id = (
+            self._optional_id(payload.get("store_id"))
+            if "store_id" in payload
+            else self._optional_id(current.get("store_id"))
+        )
+        type_id = (
+            self._optional_id(payload.get("commerce_type_id"))
+            if "commerce_type_id" in payload
+            else self._optional_id(current.get("commerce_type_id"))
+        )
+        if store_id is not None:
+            store = self.get_store(store_id)
+            if not store["is_active"]:
+                raise ValueError("A loja está desactivada")
+            if "commerce_type_id" in payload:
+                requested = self._optional_id(payload.get("commerce_type_id"))
+                if requested is not None and requested != store["commerce_type_id"]:
+                    raise ValueError("A loja não pertence a esse tipo de comércio")
+            type_id = store["commerce_type_id"]
+            commerce_type = self.get_commerce_type(type_id)
+            if not commerce_type["is_active"]:
+                raise ValueError("O tipo de comércio está desactivado")
+        elif type_id is not None:
+            commerce_type = self.get_commerce_type(type_id)
+            if not commerce_type["is_active"]:
+                raise ValueError("O tipo de comércio está desactivado")
+        return type_id, store_id
+
+    def _apply_list_learning(self, connection, product_id: int, list_id: int) -> None:
+        row = connection.execute(
+            "SELECT commerce_type_id, store_id FROM shopping_lists WHERE id = ?",
+            (list_id,),
+        ).fetchone()
+        if row is None:
+            return
+        type_id = row["commerce_type_id"]
+        store_id = row["store_id"]
+        if not type_id and not store_id:
+            return
+        if type_id:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO product_commerce_types (product_id, commerce_type_id, priority)
+                VALUES (?, ?, 0)
+                """,
+                (product_id, type_id),
+            )
+        if store_id:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO product_stores (product_id, store_id, priority)
+                VALUES (?, ?, 0)
+                """,
+                (product_id, store_id),
+            )
+
+    def _attach_item_context_flags(
+        self, connection, items: list[dict[str, Any]], listed: dict[str, Any]
+    ) -> None:
+        type_id = listed.get("commerce_type_id")
+        store_id = listed.get("store_id")
+        product_ids = [item["product_id"] for item in items if item.get("product_id")]
+        products = attach_product_contexts(connection, [{"id": product_id} for product_id in product_ids])
+        by_id = {product["id"]: product for product in products}
+        for item in items:
+            product = by_id.get(item.get("product_id")) or {}
+            type_ids = product.get("commerce_type_ids") or []
+            store_ids = product.get("store_ids") or []
+            if not type_id and not store_id:
+                item["in_context"] = True
+            elif store_id:
+                item["in_context"] = store_id in store_ids or type_id in type_ids
+            else:
+                item["in_context"] = type_id in type_ids
+
     def _migrate_catalog(self, connection, templates: list[dict]) -> None:
         if _table_exists(connection, "item_templates"):
             templates_rows = connection.execute(
@@ -1085,6 +1221,19 @@ class ShoppingService:
         return int(cursor.lastrowid)
 
     def _serialize_list(self, row) -> dict[str, Any]:
+        keys = row.keys()
+        commerce_type_id = row["commerce_type_id"] if "commerce_type_id" in keys else None
+        store_id = row["store_id"] if "store_id" in keys else None
+        commerce_type_name = row["commerce_type_name"] if "commerce_type_name" in keys else None
+        location_store_name = row["location_store_name"] if "location_store_name" in keys else None
+        if location_store_name and commerce_type_name:
+            location_label = f"{location_store_name} · {commerce_type_name}"
+        elif location_store_name:
+            location_label = location_store_name
+        elif commerce_type_name:
+            location_label = commerce_type_name
+        else:
+            location_label = "Todos os locais"
         return {
             "id": row["id"],
             "name": row["name"],
@@ -1092,6 +1241,12 @@ class ShoppingService:
             "budget": row["budget"],
             "notes": row["notes"],
             "status": row["status"],
+            "commerce_type_id": commerce_type_id,
+            "store_id": store_id,
+            "commerce_type_name": commerce_type_name,
+            "location_store_name": location_store_name,
+            "location_label": location_label,
+            "location_short": location_store_name or commerce_type_name or "Todos",
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
             "item_count": row["item_count"] or 0,

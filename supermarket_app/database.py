@@ -30,6 +30,8 @@ class Database:
                     budget REAL NOT NULL DEFAULT 0,
                     notes TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'active',
+                    commerce_type_id INTEGER,
+                    store_id INTEGER,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -127,6 +129,8 @@ class Database:
                 """
             )
             self._ensure_column(connection, "shopping_items", "product_id", "INTEGER")
+            self._ensure_column(connection, "shopping_lists", "commerce_type_id", "INTEGER")
+            self._ensure_column(connection, "shopping_lists", "store_id", "INTEGER")
 
     def _ensure_column(self, connection, table: str, column: str, definition: str) -> None:
         rows = connection.execute(f"PRAGMA table_info({table})").fetchall()

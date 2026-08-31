@@ -135,6 +135,7 @@ class WSGITestCase(unittest.TestCase):
                 "types": len(types),
                 "stores": len(stores),
                 "relations": relations,
+                "list_context": (listed.get("commerce_type_id"), listed.get("store_id")),
             }
 
         first = snapshot()
@@ -447,3 +448,298 @@ class WSGITestCase(unittest.TestCase):
         self.assertFalse(any(row["id"] == created_type["id"] for row in active_types))
         active_stores = json.loads(self.request("GET", "/api/stores")["body"])["stores"]
         self.assertFalse(any(row["id"] == created_store["id"] for row in active_stores))
+
+    def test_existing_lists_have_null_context(self):
+        listed = json.loads(self.request("GET", "/api/lists")["body"])["lists"]
+        self.assertTrue(listed)
+        self.assertIsNone(listed[0]["commerce_type_id"])
+        self.assertIsNone(listed[0]["store_id"])
+        self.assertEqual(listed[0]["location_short"], "Todos")
+
+    def test_list_context_create_update_and_reject_mismatch(self):
+        types = {row["slug"]: row["id"] for row in self._commerce_types()}
+        continente = self._by_slug(self._stores(), "continente")
+        worten = self._by_slug(self._stores(), "worten")
+        bricolage = types["bricolage"]
+
+        with_type = json.loads(
+            self.request("POST", "/api/lists", {"name": "Só Bricolage", "commerce_type_id": bricolage})["body"]
+        )
+        self.assertEqual(self.request("POST", "/api/lists", {"name": "Só Bricolage", "commerce_type_id": bricolage})["status"], "201 Created")
+        self.assertEqual(with_type["commerce_type_id"], bricolage)
+        self.assertIsNone(with_type["store_id"])
+        self.assertEqual(with_type["location_short"], "Bricolage")
+
+        with_store = json.loads(
+            self.request("POST", "/api/lists", {"name": "Continente", "store_id": continente["id"]})["body"]
+        )
+        self.assertEqual(with_store["store_id"], continente["id"])
+        self.assertEqual(with_store["commerce_type_id"], types["supermercado"])
+        self.assertEqual(self._by_slug(self._stores(), "worten")["commerce_type_slug"], "tecnologia")
+        self.assertEqual(self._by_slug(self._stores(), "leroy-merlin")["commerce_type_slug"], "bricolage")
+        leroy_list = json.loads(
+            self.request("POST", "/api/lists", {"name": "Leroy", "store_id": self._by_slug(self._stores(), "leroy-merlin")["id"]})["body"]
+        )
+        self.assertEqual(leroy_list["commerce_type_id"], types["bricolage"])
+        worten_list = json.loads(
+            self.request("POST", "/api/lists", {"name": "Worten ok", "store_id": worten["id"]})["body"]
+        )
+        self.assertEqual(worten_list["commerce_type_id"], types["tecnologia"])
+
+        rejected = self.request(
+            "POST",
+            "/api/lists",
+            {"name": "Mau", "store_id": worten["id"], "commerce_type_id": types["supermercado"]},
+        )
+        self.assertEqual(rejected["status"], "400 Bad Request")
+        self.assertIn("não pertence", json.loads(rejected["body"])["error"])
+        still = json.loads(self.request("GET", f"/api/lists/{worten_list['id']}")["body"])
+        self.assertEqual(still["store_id"], worten["id"])
+        self.assertEqual(still["commerce_type_id"], types["tecnologia"])
+        patch_rejected = self.request(
+            "PATCH",
+            f"/api/lists/{worten_list['id']}",
+            {"store_id": worten["id"], "commerce_type_id": types["supermercado"]},
+        )
+        self.assertEqual(patch_rejected["status"], "400 Bad Request")
+        unchanged = json.loads(self.request("GET", f"/api/lists/{worten_list['id']}")["body"])
+        self.assertEqual(unchanged["commerce_type_id"], types["tecnologia"])
+
+        patched = json.loads(
+            self.request(
+                "PATCH",
+                f"/api/lists/{with_store['id']}",
+                {"commerce_type_id": bricolage, "store_id": None},
+            )["body"]
+        )
+        self.assertEqual(patched["commerce_type_id"], bricolage)
+        self.assertIsNone(patched["store_id"])
+        self.assertEqual(len(patched["items"]), 0)
+
+        cleared = json.loads(
+            self.request(
+                "PATCH",
+                f"/api/lists/{with_store['id']}",
+                {"commerce_type_id": None, "store_id": None},
+            )["body"]
+        )
+        self.assertIsNone(cleared["commerce_type_id"])
+        self.assertIsNone(cleared["store_id"])
+
+    def test_duplicate_list_keeps_context(self):
+        worten = self._by_slug(self._stores(), "worten")
+        source = json.loads(
+            self.request("POST", "/api/lists", {"name": "Tech run", "store_id": worten["id"]})["body"]
+        )
+        self.request("POST", f"/api/lists/{source['id']}/items", {"name": "HDMI", "quantity": 1})
+        source = json.loads(self.request("GET", f"/api/lists/{source['id']}")["body"])
+        clone = json.loads(self.request("POST", f"/api/lists/{source['id']}/duplicate")["body"])
+        self.assertEqual(clone["store_id"], source["store_id"])
+        self.assertEqual(clone["commerce_type_id"], source["commerce_type_id"])
+        self.assertEqual(len(clone["items"]), 1)
+        self.assertEqual(clone["items"][0]["name"], "HDMI")
+        self.assertEqual(clone["items"][0]["product_id"], source["items"][0]["product_id"])
+        self.assertNotEqual(clone["items"][0]["id"], source["items"][0]["id"])
+        before = json.loads(self.request("GET", "/api/products")["body"])["products"]
+        after = json.loads(self.request("GET", "/api/products")["body"])["products"]
+        self.assertEqual(len(before), len(after))
+
+    def test_list_learning_new_and_existing_products(self):
+        types = {row["slug"]: row["id"] for row in self._commerce_types()}
+        leroy = self._by_slug(self._stores(), "leroy-merlin")
+        worten = self._by_slug(self._stores(), "worten")
+
+        leroy_list = json.loads(
+            self.request("POST", "/api/lists", {"name": "Leroy", "store_id": leroy["id"]})["body"]
+        )
+        created = json.loads(
+            self.request("POST", f"/api/lists/{leroy_list['id']}/items", {"name": "Broca 8 mm", "quantity": 1})["body"]
+        )
+        product = json.loads(self.request("GET", f"/api/products/{created['product_id']}")["body"])
+        self.assertEqual(product["name"], "Broca 8 mm")
+        self.assertEqual(created["product_id"], product["id"])
+        self.assertIn(types["bricolage"], product["commerce_type_ids"])
+        self.assertEqual(product["store_ids"], [leroy["id"]])
+        catalog = json.loads(self.request("GET", "/api/products?search=Broca%208%20mm")["body"])["products"]
+        self.assertEqual(len(catalog), 1)
+
+        orphan = json.loads(self.request("POST", "/api/products", {"name": "Fita cola"})["body"])
+        self.assertEqual(orphan["commerce_type_ids"], [])
+        worten_list = json.loads(
+            self.request("POST", "/api/lists", {"name": "Worten", "store_id": worten["id"]})["body"]
+        )
+        added = json.loads(
+            self.request("POST", f"/api/lists/{worten_list['id']}/products/{orphan['id']}")["body"]
+        )
+        self.assertEqual(added["product_id"], orphan["id"])
+        learned = json.loads(self.request("GET", f"/api/products/{orphan['id']}")["body"])
+        self.assertEqual(learned["id"], orphan["id"])
+        self.assertIn(types["tecnologia"], learned["commerce_type_ids"])
+        self.assertIn(worten["id"], learned["store_ids"])
+
+        brico_list = json.loads(
+            self.request("POST", "/api/lists", {"name": "Brico", "commerce_type_id": types["bricolage"]})["body"]
+        )
+        item = json.loads(
+            self.request("POST", f"/api/lists/{brico_list['id']}/items", {"name": "Alicate", "quantity": 1})["body"]
+        )
+        typed = json.loads(self.request("GET", f"/api/products/{item['product_id']}")["body"])
+        self.assertIn(types["bricolage"], typed["commerce_type_ids"])
+        self.assertEqual(typed["store_ids"], [])
+
+        bare = json.loads(self.request("POST", "/api/lists", {"name": "Sem local"})["body"])
+        fresh = json.loads(
+            self.request("POST", f"/api/lists/{bare['id']}/items", {"name": "Produto Neutro", "quantity": 1})["body"]
+        )
+        untouched = json.loads(self.request("GET", f"/api/products/{fresh['product_id']}")["body"])
+        self.assertEqual(untouched["commerce_type_ids"], [])
+        self.assertEqual(untouched["store_ids"], [])
+
+    def test_pilhas_aa_stays_unique_across_store_lists(self):
+        types = {row["slug"]: row["id"] for row in self._commerce_types()}
+        continente = self._by_slug(self._stores(), "continente")
+        worten = self._by_slug(self._stores(), "worten")
+        product = json.loads(
+            self.request(
+                "POST",
+                "/api/products",
+                {
+                    "name": "Pilhas AA",
+                    "commerce_type_ids": [types["supermercado"], types["bricolage"], types["tecnologia"]],
+                },
+            )["body"]
+        )
+        first = json.loads(self.request("POST", "/api/lists", {"name": "Cont", "store_id": continente["id"]})["body"])
+        second = json.loads(self.request("POST", "/api/lists", {"name": "Wort", "store_id": worten["id"]})["body"])
+        a = json.loads(self.request("POST", f"/api/lists/{first['id']}/products/{product['id']}")["body"])
+        b = json.loads(self.request("POST", f"/api/lists/{second['id']}/products/{product['id']}")["body"])
+        self.assertEqual(a["product_id"], product["id"])
+        self.assertEqual(b["product_id"], product["id"])
+        after = json.loads(self.request("GET", f"/api/products/{product['id']}")["body"])
+        self.assertEqual(after["id"], product["id"])
+        self.assertCountEqual(after["store_ids"], [continente["id"], worten["id"]])
+        matches = json.loads(self.request("GET", "/api/products?search=Pilhas%20AA")["body"])["products"]
+        self.assertEqual(len(matches), 1)
+
+    def test_changing_list_context_keeps_items(self):
+        types = {row["slug"]: row["id"] for row in self._commerce_types()}
+        continente = self._by_slug(self._stores(), "continente")
+        leroy = self._by_slug(self._stores(), "leroy-merlin")
+        listed = json.loads(
+            self.request("POST", "/api/lists", {"name": "Mudança", "store_id": continente["id"]})["body"]
+        )
+        item = json.loads(
+            self.request("POST", f"/api/lists/{listed['id']}/items", {"name": "Bananas", "quantity": 2})["body"]
+        )
+        moved = json.loads(
+            self.request(
+                "PATCH",
+                f"/api/lists/{listed['id']}",
+                {"store_id": leroy["id"]},
+            )["body"]
+        )
+        self.assertEqual(moved["store_id"], leroy["id"])
+        self.assertEqual(moved["commerce_type_id"], types["bricolage"])
+        self.assertEqual(len(moved["items"]), 1)
+        self.assertEqual(moved["items"][0]["id"], item["id"])
+        self.assertEqual(moved["items"][0]["quantity"], 2)
+        self.assertEqual(moved["items"][0]["status"], "pending")
+        self.assertFalse(moved["items"][0]["in_context"])
+        cleared = json.loads(
+            self.request(
+                "PATCH",
+                f"/api/lists/{listed['id']}",
+                {"commerce_type_id": None, "store_id": None},
+            )["body"]
+        )
+        self.assertEqual(len(cleared["items"]), 1)
+        self.assertTrue(cleared["items"][0]["in_context"])
+
+    def _item_fields(self, item):
+        return {
+            "id": item["id"],
+            "product_id": item["product_id"],
+            "quantity": item["quantity"],
+            "unit": item["unit"],
+            "status": item["status"],
+            "estimated_price": item["estimated_price"],
+            "note": item["note"],
+        }
+
+    def test_context_cycle_preserves_item_fields(self):
+        types = {row["slug"]: row["id"] for row in self._commerce_types()}
+        continente = self._by_slug(self._stores(), "continente")
+        leroy = self._by_slug(self._stores(), "leroy-merlin")
+        listed = json.loads(self.request("POST", "/api/lists", {"name": "Ciclo"})["body"])
+        first = json.loads(
+            self.request(
+                "POST",
+                f"/api/lists/{listed['id']}/items",
+                {"name": "Bananas", "quantity": 2, "unit": "kg", "estimated_price": 1.2, "note": "maduras"},
+            )["body"]
+        )
+        second = json.loads(
+            self.request(
+                "POST",
+                f"/api/lists/{listed['id']}/items",
+                {"name": "Pilhas AA", "quantity": 1, "unit": "un", "note": "marca X"},
+            )["body"]
+        )
+        self.request("POST", f"/api/items/{first['id']}/cycle")
+        snapshot = [self._item_fields(item) for item in json.loads(self.request("GET", f"/api/lists/{listed['id']}")["body"])["items"]]
+        notes_before = {item["id"]: item["note"] for item in json.loads(self.request("GET", f"/api/lists/{listed['id']}")["body"])["items"]}
+
+        for payload in (
+            {"store_id": continente["id"]},
+            {"store_id": leroy["id"]},
+            {"commerce_type_id": types["bricolage"], "store_id": None},
+            {"commerce_type_id": None, "store_id": None},
+        ):
+            moved = json.loads(self.request("PATCH", f"/api/lists/{listed['id']}", payload)["body"])
+            self.assertEqual([self._item_fields(item) for item in moved["items"]], snapshot)
+
+        tech = json.loads(
+            self.request("PATCH", f"/api/lists/{listed['id']}", {"commerce_type_id": types["tecnologia"], "store_id": None})["body"]
+        )
+        self.assertEqual(len(tech["items"]), 2)
+        self.assertEqual({item["id"]: item["note"] for item in tech["items"]}, notes_before)
+        self.assertFalse(any(item["note"] == "Fora do contexto" for item in tech["items"]))
+        bananas = next(item for item in tech["items"] if item["name"] == "Bananas")
+        self.assertFalse(bananas["in_context"])
+        self.assertEqual(bananas["note"], "maduras")
+
+    def test_learning_is_idempotent_when_adding_same_product(self):
+        types = {row["slug"]: row["id"] for row in self._commerce_types()}
+        worten = self._by_slug(self._stores(), "worten")
+        listed = json.loads(self.request("POST", "/api/lists", {"name": "Worten", "store_id": worten["id"]})["body"])
+        first = json.loads(
+            self.request("POST", f"/api/lists/{listed['id']}/items", {"name": "Pilhas AA", "quantity": 1})["body"]
+        )
+        again = json.loads(
+            self.request("POST", f"/api/lists/{listed['id']}/products/{first['product_id']}")["body"]
+        )
+        third = json.loads(
+            self.request("POST", f"/api/lists/{listed['id']}/items", {"name": "pilhas aa", "quantity": 1})["body"]
+        )
+        self.assertEqual(again["product_id"], first["product_id"])
+        self.assertEqual(third["product_id"], first["product_id"])
+        product = json.loads(self.request("GET", f"/api/products/{first['product_id']}")["body"])
+        self.assertEqual(product["commerce_type_ids"].count(types["tecnologia"]), 1)
+        self.assertEqual(product["store_ids"].count(worten["id"]), 1)
+        self.assertEqual(len(product["commerce_type_ids"]), 1)
+        self.assertEqual(len(product["store_ids"]), 1)
+        catalog = json.loads(self.request("GET", "/api/products?search=Pilhas%20AA")["body"])["products"]
+        self.assertEqual(len(catalog), 1)
+        listed = json.loads(self.request("GET", f"/api/lists/{listed['id']}")["body"])
+        self.assertEqual(len(listed["items"]), 1)
+
+    def test_product_filter_does_not_change_list_context(self):
+        continente = self._by_slug(self._stores(), "continente")
+        listed = json.loads(
+            self.request("POST", "/api/lists", {"name": "Filtro", "store_id": continente["id"]})["body"]
+        )
+        self.request("GET", f"/api/products?store_id={continente['id']}")
+        self.request("GET", "/api/products")
+        after = json.loads(self.request("GET", f"/api/lists/{listed['id']}")["body"])
+        self.assertEqual(after["store_id"], continente["id"])
+        self.assertEqual(after["commerce_type_id"], continente["commerce_type_id"])

@@ -30,7 +30,12 @@ function renderContextChip() {
   const app = window.ShoppingApp;
   if (!chip || !app) return;
   const ctx = app.shopState.catalogContext || { kind: "all" };
-  if (ctx.kind === "all") {
+  if (ctx.kind === "all" && !ctx.source) {
+    chip.hidden = true;
+    chip.textContent = "";
+    return;
+  }
+  if (ctx.kind === "all" && !ctx.showAll) {
     chip.hidden = true;
     chip.textContent = "";
     return;
@@ -38,17 +43,31 @@ function renderContextChip() {
   chip.hidden = false;
   chip.innerHTML = "";
   const label = document.createElement("span");
-  label.textContent = ctx.kind === "store" ? `${ctx.name} · ${ctx.typeName || ""}` : ctx.name;
-  const clear = document.createElement("button");
-  clear.type = "button";
-  clear.className = "ghost-button small";
-  clear.textContent = "Todos ×";
-  clear.addEventListener("click", async () => {
-    app.setCatalogContext({ kind: "all" });
-    await app.loadProducts();
-    app.applyGeneralHeader();
-  });
-  chip.append(label, clear);
+  const action = document.createElement("button");
+  action.type = "button";
+  action.className = "ghost-button small";
+  if (ctx.showAll && ctx.kind !== "all") {
+    label.textContent = "Todos os produtos";
+    action.textContent = ctx.kind === "store" ? ctx.name : ctx.name;
+    action.addEventListener("click", async () => {
+      app.setCatalogContext({ ...ctx, showAll: false });
+      await app.loadProducts();
+      app.applyGeneralHeader();
+    });
+  } else if (ctx.kind === "all") {
+    chip.hidden = true;
+    chip.textContent = "";
+    return;
+  } else {
+    label.textContent = ctx.kind === "store" ? `${ctx.name} · ${ctx.typeName || ""}` : ctx.name;
+    action.textContent = "Mostrar todos";
+    action.addEventListener("click", async () => {
+      app.setCatalogContext({ ...ctx, showAll: true });
+      await app.loadProducts();
+      app.applyGeneralHeader();
+    });
+  }
+  chip.append(label, action);
 }
 
 function renderCatalog() {
@@ -121,6 +140,7 @@ function renderTypeCheckboxes(selectedIds) {
   const selected = new Set((selectedIds || []).map(Number));
   const ctx = app.shopState.catalogContext || { kind: "all" };
   if (ctx.kind === "type" && ctx.id) selected.add(Number(ctx.id));
+  if (ctx.kind === "store" && ctx.typeId) selected.add(Number(ctx.typeId));
   container.innerHTML = "";
   (app.shopState.commerceTypes || []).filter((type) => type.is_active || selected.has(type.id)).forEach((type) => {
     const label = document.createElement("label");
@@ -183,6 +203,10 @@ function setupCatalog() {
     payload.default_quantity = Number(payload.default_quantity || 1);
     payload.default_estimated_price = Number(payload.default_estimated_price || 0);
     payload.commerce_type_ids = selectedTypeIds();
+    const ctx = window.ShoppingApp.shopState.catalogContext || {};
+    if (!productId && ctx.kind === "store" && ctx.id) {
+      payload.store_ids = [ctx.id];
+    }
     if (productId) {
       await window.ShoppingApp.api(`/api/products/${productId}`, {
         method: "PATCH",

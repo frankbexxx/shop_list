@@ -102,6 +102,11 @@
             </div>
           </header>
 
+          <div class="today-context-actions">
+            <button type="button" id="change-location-button" class="ghost-button">Alterar local</button>
+            <button type="button" id="add-from-catalog-button" class="primary-button">Adicionar da Lista Geral</button>
+          </div>
+
           <section class="stats-grid">
             <article class="stat-card">
               <span>Estimativa</span>
@@ -375,8 +380,20 @@
           <input name="name" required>
         </label>
         <label class="field">
-          <span>Supermercado</span>
-          <input name="store_name">
+          <span>Tipo de comércio</span>
+          <select name="commerce_type_id" id="list-type-select">
+            <option value="">Todos os locais</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Loja</span>
+          <select name="store_id" id="list-store-select">
+            <option value="">Nenhuma</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Nota de loja</span>
+          <input name="store_name" placeholder="Opcional">
         </label>
         <label class="field">
           <span>Orçamento</span>
@@ -391,6 +408,23 @@
           <button type="submit" class="primary-button">Guardar</button>
         </div>
       </form>
+    </dialog>
+
+    <dialog id="location-picker">
+      <div class="list-form">
+        <h3>Local da compra</h3>
+        <button type="button" class="hub-card" id="picker-all">
+          <span class="hub-card-label">Todos os locais</span>
+          <span class="hub-card-hint">Catálogo universal, sem contexto</span>
+        </button>
+        <h2 class="catalog-group-title">Tipos</h2>
+        <div id="picker-types" class="location-grid"></div>
+        <h2 class="catalog-group-title">Lojas</h2>
+        <div id="picker-stores" class="location-grid"></div>
+        <div class="dialog-actions">
+          <button type="button" id="close-location-picker" class="ghost-button">Fechar</button>
+        </div>
+      </div>
     </dialog>
 
     <script src="/static/theme.js"></script>
