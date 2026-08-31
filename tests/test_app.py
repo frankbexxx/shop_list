@@ -47,6 +47,8 @@ class WSGITestCase(unittest.TestCase):
         self.assertEqual(response["status"], "200 OK")
         self.assertGreaterEqual(len(payload["lists"]), 1)
         self.assertGreaterEqual(len(payload["suggestions"]), 1)
+        self.assertEqual(payload["locations"]["commerce_type_count"], 8)
+        self.assertEqual(payload["locations"]["store_count"], 14)
 
     def test_root_serves_frontend(self):
         response = self.request("GET", "/")
@@ -64,6 +66,7 @@ class WSGITestCase(unittest.TestCase):
             "/static/navigation.js",
             "/static/app.js",
             "/static/catalog.js",
+            "/static/locations.js",
         ):
             response = self.request("GET", path)
             self.assertEqual(response["status"], "200 OK", path)
@@ -121,11 +124,17 @@ class WSGITestCase(unittest.TestCase):
             products = json.loads(self.request("GET", "/api/products?active=all")["body"])["products"]
             dashboard = json.loads(self.request("GET", "/api/dashboard")["body"])
             listed = json.loads(self.request("GET", f"/api/lists/{dashboard['active_list_id']}")["body"])
+            types = json.loads(self.request("GET", "/api/commerce-types?active=all")["body"])["commerce_types"]
+            stores = json.loads(self.request("GET", "/api/stores?active=all")["body"])["stores"]
+            relations = tuple(sorted((p["id"], tuple(p["commerce_type_ids"])) for p in products))
             return {
                 "count": len(products),
                 "names": sorted(product["name"] for product in products),
                 "usage": {product["id"]: product["times_used"] for product in products},
                 "links": sorted((item["id"], item["product_id"]) for item in listed["items"]),
+                "types": len(types),
+                "stores": len(stores),
+                "relations": relations,
             }
 
         first = snapshot()
@@ -218,3 +227,223 @@ class WSGITestCase(unittest.TestCase):
         self.assertTrue(surviving["is_active"])
         listed = json.loads(self.request("GET", f"/api/lists/{list_id}")["body"])
         self.assertFalse(any(row["id"] == item["id"] for row in listed["items"]))
+
+    def _commerce_types(self):
+        return json.loads(self.request("GET", "/api/commerce-types?active=all")["body"])["commerce_types"]
+
+    def _stores(self):
+        return json.loads(self.request("GET", "/api/stores?active=all")["body"])["stores"]
+
+    def _by_slug(self, rows, slug):
+        return next(row for row in rows if row["slug"] == slug)
+
+    def test_locations_are_seeded(self):
+        types = self._commerce_types()
+        stores = self._stores()
+        self.assertEqual(
+            [row["slug"] for row in types],
+            [
+                "supermercado",
+                "mercearia",
+                "bricolage",
+                "tecnologia",
+                "farmacia",
+                "papelaria",
+                "casa",
+                "outros",
+            ],
+        )
+        self.assertEqual(len(stores), 14)
+        self.assertEqual(self._by_slug(stores, "continente")["commerce_type_slug"], "supermercado")
+        self.assertEqual(self._by_slug(stores, "leroy-merlin")["commerce_type_slug"], "bricolage")
+        self.assertEqual(self._by_slug(stores, "worten")["commerce_type_slug"], "tecnologia")
+        self.assertEqual(self._by_slug(stores, "staples")["commerce_type_slug"], "papelaria")
+        self.assertEqual(self._by_slug(stores, "wells")["commerce_type_slug"], "farmacia")
+
+        products = json.loads(self.request("GET", "/api/products")["body"])["products"]
+        supermarket_id = self._by_slug(types, "supermercado")["id"]
+        self.assertTrue(products)
+        self.assertTrue(all(supermarket_id in product["commerce_type_ids"] for product in products))
+
+    def test_today_item_does_not_invent_commerce_types(self):
+        dashboard = json.loads(self.request("GET", "/api/dashboard")["body"])
+        created = json.loads(
+            self.request(
+                "POST",
+                f"/api/lists/{dashboard['active_list_id']}/items",
+                {"name": "Produto Sem Contexto", "quantity": 1},
+            )["body"]
+        )
+        product = json.loads(self.request("GET", f"/api/products/{created['product_id']}")["body"])
+        self.assertEqual(product["commerce_type_ids"], [])
+        self.assertEqual(product["store_ids"], [])
+
+    def test_product_overlap_across_commerce_types_and_store(self):
+        types = {row["slug"]: row["id"] for row in self._commerce_types()}
+        worten = self._by_slug(self._stores(), "worten")
+        created = json.loads(
+            self.request(
+                "POST",
+                "/api/products",
+                {
+                    "name": "Pilhas AA",
+                    "category": "Vários",
+                    "commerce_type_ids": [
+                        types["supermercado"],
+                        types["bricolage"],
+                        types["tecnologia"],
+                    ],
+                },
+            )["body"]
+        )
+        self.assertEqual(created["name"], "Pilhas AA")
+        self.assertCountEqual(
+            created["commerce_type_ids"],
+            [types["supermercado"], types["bricolage"], types["tecnologia"]],
+        )
+
+        catalog = json.loads(self.request("GET", "/api/products?search=Pilhas%20AA")["body"])["products"]
+        self.assertEqual(len(catalog), 1)
+        self.assertEqual(catalog[0]["id"], created["id"])
+
+        for slug in ("supermercado", "bricolage", "tecnologia"):
+            filtered = json.loads(
+                self.request("GET", f"/api/products?commerce_type_id={types[slug]}")["body"]
+            )["products"]
+            ids = [product["id"] for product in filtered]
+            self.assertIn(created["id"], ids, slug)
+            self.assertEqual(ids.count(created["id"]), 1, slug)
+
+        mercearia = json.loads(
+            self.request("GET", f"/api/products?commerce_type_id={types['mercearia']}")["body"]
+        )["products"]
+        self.assertFalse(any(product["id"] == created["id"] for product in mercearia))
+
+        linked = json.loads(
+            self.request("POST", f"/api/products/{created['id']}/stores/{worten['id']}")["body"]
+        )
+        self.assertEqual(linked["store_ids"], [worten["id"]])
+        self.assertEqual(linked["id"], created["id"])
+
+        by_store = json.loads(
+            self.request("GET", f"/api/products?store_id={worten['id']}")["body"]
+        )["products"]
+        store_ids = [product["id"] for product in by_store]
+        self.assertIn(created["id"], store_ids)
+        self.assertEqual(store_ids.count(created["id"]), 1)
+
+        dashboard = json.loads(self.request("GET", "/api/dashboard")["body"])
+        first = json.loads(
+            self.request("POST", f"/api/lists/{dashboard['active_list_id']}/products/{created['id']}")["body"]
+        )
+        again = json.loads(
+            self.request("POST", f"/api/lists/{dashboard['active_list_id']}/products/{created['id']}")["body"]
+        )
+        self.assertEqual(first["product_id"], created["id"])
+        self.assertEqual(again["product_id"], created["id"])
+        self.assertTrue(again["merged"])
+        product = json.loads(self.request("GET", f"/api/products/{created['id']}")["body"])
+        self.assertEqual(product["times_used"], first["times_used"] if "times_used" in first else product["times_used"])
+        self.assertGreaterEqual(product["times_used"], 1)
+
+        named = json.loads(self.request("POST", "/api/products", {"name": "Pilhas AA"})["body"])
+        self.assertEqual(named["id"], created["id"])
+
+    def test_store_filter_unions_explicit_and_commerce_type(self):
+        types = {row["slug"]: row["id"] for row in self._commerce_types()}
+        worten = self._by_slug(self._stores(), "worten")
+        leroy = self._by_slug(self._stores(), "leroy-merlin")
+
+        supermarket_only = json.loads(
+            self.request(
+                "POST",
+                "/api/products",
+                {
+                    "name": "Azeite Extra",
+                    "category": "Mercearia",
+                    "commerce_type_ids": [types["supermercado"]],
+                },
+            )["body"]
+        )
+        self.request("POST", f"/api/products/{supermarket_only['id']}/stores/{worten['id']}")
+        bricolage_only = json.loads(
+            self.request(
+                "POST",
+                "/api/products",
+                {
+                    "name": "Martelo",
+                    "category": "Vários",
+                    "commerce_type_ids": [types["bricolage"]],
+                },
+            )["body"]
+        )
+
+        worten_products = json.loads(self.request("GET", f"/api/products?store_id={worten['id']}")["body"])["products"]
+        worten_ids = [product["id"] for product in worten_products]
+        self.assertEqual(len(worten_ids), len(set(worten_ids)))
+        self.assertIn(supermarket_only["id"], worten_ids)
+        self.assertNotIn(bricolage_only["id"], worten_ids)
+        type_ids = [
+            product["id"]
+            for product in json.loads(
+                self.request("GET", f"/api/products?commerce_type_id={worten['commerce_type_id']}")["body"]
+            )["products"]
+        ]
+        for product_id in type_ids:
+            self.assertIn(product_id, worten_ids)
+        self.assertTrue(set(type_ids) | {supermarket_only["id"]} <= set(worten_ids))
+
+        leroy_ids = [
+            product["id"]
+            for product in json.loads(self.request("GET", f"/api/products?store_id={leroy['id']}")["body"])["products"]
+        ]
+        self.assertEqual(len(leroy_ids), len(set(leroy_ids)))
+        self.assertIn(bricolage_only["id"], leroy_ids)
+        self.assertNotIn(supermarket_only["id"], leroy_ids)
+
+    def test_location_crud_and_soft_delete_keeps_products(self):
+        created_type = json.loads(self.request("POST", "/api/commerce-types", {"name": "Pet shop"})["body"])
+        self.assertEqual(created_type["slug"], "pet-shop")
+        created_store = json.loads(
+            self.request(
+                "POST",
+                "/api/stores",
+                {"name": "Zoolandia", "commerce_type_id": created_type["id"]},
+            )["body"]
+        )
+        self.assertEqual(created_store["commerce_type_id"], created_type["id"])
+
+        searched = json.loads(self.request("GET", "/api/stores?search=zoo")["body"])["stores"]
+        self.assertEqual([store["id"] for store in searched], [created_store["id"]])
+        typed = json.loads(
+            self.request("GET", f"/api/stores?commerce_type_id={created_type['id']}")["body"]
+        )["stores"]
+        self.assertEqual([store["id"] for store in typed], [created_store["id"]])
+
+        product = json.loads(
+            self.request(
+                "POST",
+                "/api/products",
+                {
+                    "name": "Ração cão",
+                    "commerce_type_ids": [created_type["id"]],
+                },
+            )["body"]
+        )
+        self.request("POST", f"/api/products/{product['id']}/stores/{created_store['id']}")
+
+        deactivated_type = json.loads(self.request("DELETE", f"/api/commerce-types/{created_type['id']}")["body"])
+        self.assertFalse(deactivated_type["is_active"])
+        deactivated_store = json.loads(self.request("DELETE", f"/api/stores/{created_store['id']}")["body"])
+        self.assertFalse(deactivated_store["is_active"])
+
+        surviving = json.loads(self.request("GET", f"/api/products/{product['id']}")["body"])
+        self.assertTrue(surviving["is_active"])
+        self.assertEqual(surviving["name"], "Ração cão")
+        self.assertIn(created_type["id"], surviving["commerce_type_ids"])
+        self.assertIn(created_store["id"], surviving["store_ids"])
+
+        active_types = json.loads(self.request("GET", "/api/commerce-types")["body"])["commerce_types"]
+        self.assertFalse(any(row["id"] == created_type["id"] for row in active_types))
+        active_stores = json.loads(self.request("GET", "/api/stores")["body"])["stores"]
+        self.assertFalse(any(row["id"] == created_store["id"] for row in active_stores))

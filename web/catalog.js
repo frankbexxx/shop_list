@@ -25,11 +25,38 @@ function groupProducts(products) {
   return ordered;
 }
 
+function renderContextChip() {
+  const chip = document.getElementById("catalog-context");
+  const app = window.ShoppingApp;
+  if (!chip || !app) return;
+  const ctx = app.shopState.catalogContext || { kind: "all" };
+  if (ctx.kind === "all") {
+    chip.hidden = true;
+    chip.textContent = "";
+    return;
+  }
+  chip.hidden = false;
+  chip.innerHTML = "";
+  const label = document.createElement("span");
+  label.textContent = ctx.kind === "store" ? `${ctx.name} · ${ctx.typeName || ""}` : ctx.name;
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "ghost-button small";
+  clear.textContent = "Todos ×";
+  clear.addEventListener("click", async () => {
+    app.setCatalogContext({ kind: "all" });
+    await app.loadProducts();
+    app.applyGeneralHeader();
+  });
+  chip.append(label, clear);
+}
+
 function renderCatalog() {
   const app = window.ShoppingApp;
   const container = document.getElementById("catalog");
   const search = document.getElementById("product-search");
   if (!app || !container) return;
+  renderContextChip();
 
   const term = (search?.value || "").trim().toLowerCase();
   const selected = app.selectedProductIds();
@@ -39,7 +66,7 @@ function renderCatalog() {
   if (!products.length) {
     const empty = document.createElement("p");
     empty.className = "placeholder-copy";
-    empty.textContent = term ? "Nenhum produto corresponde à pesquisa." : "Ainda não há produtos na Lista Geral.";
+    empty.textContent = term ? "Nenhum produto corresponde à pesquisa." : "Ainda não há produtos neste contexto.";
     container.appendChild(empty);
     return;
   }
@@ -54,6 +81,8 @@ function renderCatalog() {
 
     items.forEach((product) => {
       const onToday = selected.has(product.id);
+      const row = document.createElement("div");
+      row.className = "catalog-row";
       const button = document.createElement("button");
       button.type = "button";
       button.className = `catalog-item${onToday ? " is-selected" : ""}`;
@@ -66,10 +95,73 @@ function renderCatalog() {
         </span>
       `;
       button.addEventListener("click", () => app.toggleProductOnToday(product.id));
-      section.appendChild(button);
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "ghost-button small";
+      edit.textContent = "Editar";
+      edit.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openProductDialog(product);
+      });
+      row.append(button, edit);
+      section.appendChild(row);
     });
     container.appendChild(section);
   });
+}
+
+function selectedTypeIds() {
+  return [...document.querySelectorAll("#product-commerce-types input:checked")].map((input) => Number(input.value));
+}
+
+function renderTypeCheckboxes(selectedIds) {
+  const container = document.getElementById("product-commerce-types");
+  const app = window.ShoppingApp;
+  if (!container || !app) return;
+  const selected = new Set((selectedIds || []).map(Number));
+  const ctx = app.shopState.catalogContext || { kind: "all" };
+  if (ctx.kind === "type" && ctx.id) selected.add(Number(ctx.id));
+  container.innerHTML = "";
+  (app.shopState.commerceTypes || []).filter((type) => type.is_active || selected.has(type.id)).forEach((type) => {
+    const label = document.createElement("label");
+    label.className = "check-option";
+    label.innerHTML = `
+      <input type="checkbox" value="${type.id}" ${selected.has(type.id) ? "checked" : ""}>
+      <span>${type.name}</span>
+    `;
+    container.appendChild(label);
+  });
+}
+
+function resetProductForm() {
+  const form = document.getElementById("product-form");
+  form.reset();
+  form.id.value = "";
+  form.default_unit.value = "un";
+  form.default_quantity.value = 1;
+  form.default_estimated_price.value = 0;
+  form.category.value = "Mercearia";
+  document.getElementById("product-dialog-title").textContent = "Novo produto";
+  const ctx = window.ShoppingApp.shopState.catalogContext;
+  renderTypeCheckboxes(ctx?.kind === "type" && ctx.id ? [ctx.id] : []);
+}
+
+function openProductDialog(product) {
+  const form = document.getElementById("product-form");
+  const dialog = document.getElementById("product-dialog");
+  resetProductForm();
+  if (product) {
+    document.getElementById("product-dialog-title").textContent = "Editar produto";
+    form.id.value = product.id;
+    form.name.value = product.name;
+    form.category.value = product.category;
+    form.subcategory.value = product.subcategory || "";
+    form.default_unit.value = product.default_unit || "un";
+    form.default_quantity.value = product.default_quantity || 1;
+    form.default_estimated_price.value = product.default_estimated_price || 0;
+    renderTypeCheckboxes(product.commerce_type_ids || []);
+  }
+  dialog.showModal();
 }
 
 function setupCatalog() {
@@ -79,33 +171,40 @@ function setupCatalog() {
   if (!search || !dialog || !form) return;
 
   search.addEventListener("input", renderCatalog);
-
-  document.getElementById("new-product-button").addEventListener("click", () => dialog.showModal());
+  document.getElementById("new-product-button").addEventListener("click", () => openProductDialog(null));
   document.getElementById("cancel-product-button").addEventListener("click", () => dialog.close());
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const formData = new FormData(form);
     const payload = Object.fromEntries(formData.entries());
+    const productId = payload.id;
+    delete payload.id;
     payload.default_quantity = Number(payload.default_quantity || 1);
     payload.default_estimated_price = Number(payload.default_estimated_price || 0);
-    await window.ShoppingApp.api("/api/products", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    payload.commerce_type_ids = selectedTypeIds();
+    if (productId) {
+      await window.ShoppingApp.api(`/api/products/${productId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await window.ShoppingApp.api("/api/products", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    }
     dialog.close();
-    form.reset();
-    form.default_unit.value = "un";
-    form.default_quantity.value = 1;
-    form.default_estimated_price.value = 0;
-    form.category.value = "Mercearia";
+    resetProductForm();
     await window.ShoppingApp.loadProducts();
   });
 }
 
 window.ShoppingCatalog = {
   render: renderCatalog,
+  renderTypes: renderTypeCheckboxes,
   setup: setupCatalog,
+  openProductDialog,
 };
 
 setupCatalog();

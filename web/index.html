@@ -49,7 +49,7 @@
             <li>
               <button type="button" class="hub-card" data-navigate="locations">
                 <span class="hub-card-label">Locais</span>
-                <span class="hub-card-hint">Supermercados, bricolage, tecnologia...</span>
+                <span class="hub-card-hint" id="home-locations-hint">Supermercados, bricolage, tecnologia...</span>
               </button>
             </li>
             <li>
@@ -69,6 +69,7 @@
             </label>
             <button type="button" id="new-product-button" class="primary-button">+ Novo produto</button>
           </div>
+          <p id="catalog-context" class="catalog-context" hidden></p>
           <div id="catalog" class="catalog-list"></div>
         </section>
 
@@ -194,7 +195,14 @@
         </section>
 
         <section class="shell-screen" data-screen="locations" hidden aria-hidden="true" aria-label="Locais">
-          <p class="placeholder-copy">Supermercados, mercearias, bricolage, tecnologia...</p>
+          <button type="button" class="hub-card" id="locations-all">
+            <span class="hub-card-label">Todos</span>
+            <span class="hub-card-hint">Catálogo completo, sem filtro de local</span>
+          </button>
+          <h2 class="catalog-group-title">Tipos</h2>
+          <div id="commerce-type-list" class="location-grid"></div>
+          <h2 class="catalog-group-title">Lojas</h2>
+          <div id="store-list" class="location-grid"></div>
         </section>
 
         <section class="shell-screen" data-screen="more" hidden aria-hidden="true" aria-label="Mais">
@@ -209,6 +217,12 @@
               <button type="button" class="hub-card" data-navigate="themes">
                 <span class="hub-card-label">Temas</span>
                 <span class="hub-card-hint">Mudar cores e superfícies da app</span>
+              </button>
+            </li>
+            <li>
+              <button type="button" class="hub-card" data-navigate="manage-locations">
+                <span class="hub-card-label">Gerir locais</span>
+                <span class="hub-card-hint">Tipos de comércio e marcas</span>
               </button>
             </li>
             <li>
@@ -232,6 +246,39 @@
 
         <section class="shell-screen" data-screen="history" hidden aria-hidden="true" aria-label="Histórico">
           <p class="placeholder-copy">As compras anteriores aparecerão aqui.</p>
+        </section>
+
+        <section class="shell-screen" data-screen="manage-locations" hidden aria-hidden="true" aria-label="Gerir locais">
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Tipos de comércio</h2>
+            </div>
+            <form id="commerce-type-form" class="inline-form">
+              <label class="field">
+                <span>Nome</span>
+                <input name="name" required placeholder="Ex.: Pet shop">
+              </label>
+              <button type="submit" class="primary-button">Adicionar tipo</button>
+            </form>
+            <div id="manage-types" class="manage-stack"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-heading">
+              <h2>Lojas / marcas</h2>
+            </div>
+            <form id="store-form" class="inline-form">
+              <label class="field">
+                <span>Nome</span>
+                <input name="name" required placeholder="Ex.: Continente">
+              </label>
+              <label class="field">
+                <span>Tipo</span>
+                <select name="commerce_type_id" id="store-type-select" required></select>
+              </label>
+              <button type="submit" class="primary-button">Adicionar loja</button>
+            </form>
+            <div id="manage-stores" class="manage-stack"></div>
+          </section>
         </section>
 
         <section class="shell-screen" data-screen="settings" hidden aria-hidden="true" aria-label="Definições">
@@ -269,7 +316,8 @@
 
     <dialog id="product-dialog">
       <form method="dialog" id="product-form" class="list-form">
-        <h3>Novo produto</h3>
+        <h3 id="product-dialog-title">Novo produto</h3>
+        <input type="hidden" name="id" id="product-id">
         <label class="field">
           <span>Nome</span>
           <input name="name" required>
@@ -308,6 +356,10 @@
           <span>Preço estimado default</span>
           <input name="default_estimated_price" type="number" step="0.01" min="0" value="0">
         </label>
+        <fieldset class="field field-wide commerce-types-field">
+          <legend>Onde costumas comprar?</legend>
+          <div id="product-commerce-types" class="checkbox-grid"></div>
+        </fieldset>
         <div class="dialog-actions">
           <button type="button" id="cancel-product-button" class="ghost-button">Cancelar</button>
           <button type="submit" class="primary-button">Guardar</button>
@@ -345,5 +397,6 @@
     <script src="/static/navigation.js"></script>
     <script src="/static/app.js"></script>
     <script src="/static/catalog.js"></script>
+    <script src="/static/locations.js"></script>
   </body>
 </html>

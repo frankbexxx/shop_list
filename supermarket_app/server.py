@@ -46,10 +46,48 @@ class ShoppingApplication:
                 product = self.service.create_product(parse_json_body(environ))
                 status = "201 Created" if product.pop("_created", True) else "200 OK"
                 return json_response(start_response, product, status)
+            if path == "/api/commerce-types" and method == "GET":
+                return json_response(start_response, {"commerce_types": self.service.list_commerce_types(get_query(environ))})
+            if path == "/api/commerce-types" and method == "POST":
+                return json_response(start_response, self.service.create_commerce_type(parse_json_body(environ)), "201 Created")
+            if path == "/api/stores" and method == "GET":
+                return json_response(start_response, {"stores": self.service.list_stores(get_query(environ))})
+            if path == "/api/stores" and method == "POST":
+                return json_response(start_response, self.service.create_store(parse_json_body(environ)), "201 Created")
 
             parts = parse_path_params(path)
+            if len(parts) >= 3 and parts[0] == "api" and parts[1] == "commerce-types":
+                type_id = int(parts[2])
+                if len(parts) == 3 and method == "GET":
+                    return json_response(start_response, self.service.get_commerce_type(type_id))
+                if len(parts) == 3 and method == "PATCH":
+                    return json_response(start_response, self.service.update_commerce_type(type_id, parse_json_body(environ)))
+                if len(parts) == 3 and method == "DELETE":
+                    return json_response(start_response, self.service.deactivate_commerce_type(type_id))
+
+            if len(parts) >= 3 and parts[0] == "api" and parts[1] == "stores":
+                store_id = int(parts[2])
+                if len(parts) == 3 and method == "GET":
+                    return json_response(start_response, self.service.get_store(store_id))
+                if len(parts) == 3 and method == "PATCH":
+                    return json_response(start_response, self.service.update_store(store_id, parse_json_body(environ)))
+                if len(parts) == 3 and method == "DELETE":
+                    return json_response(start_response, self.service.deactivate_store(store_id))
+
             if len(parts) >= 3 and parts[0] == "api" and parts[1] == "products":
                 product_id = int(parts[2])
+                if len(parts) == 5 and parts[3] == "commerce-types":
+                    type_id = int(parts[4])
+                    if method == "POST":
+                        return json_response(start_response, self.service.add_product_commerce_type(product_id, type_id), "201 Created")
+                    if method == "DELETE":
+                        return json_response(start_response, self.service.remove_product_commerce_type(product_id, type_id))
+                if len(parts) == 5 and parts[3] == "stores":
+                    store_id = int(parts[4])
+                    if method == "POST":
+                        return json_response(start_response, self.service.add_product_store(product_id, store_id), "201 Created")
+                    if method == "DELETE":
+                        return json_response(start_response, self.service.remove_product_store(product_id, store_id))
                 if len(parts) == 3 and method == "GET":
                     return json_response(start_response, self.service.get_product(product_id))
                 if len(parts) == 3 and method == "PATCH":

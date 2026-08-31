@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from .database import Database
+from .locations import attach_product_contexts, migrate_product_contexts, seed_locations, slugify
 
 
 CATEGORY_MAP = {
@@ -111,6 +112,8 @@ class ShoppingService:
         self.database.initialize()
         with self.database.connect() as connection:
             self._migrate_catalog(connection, templates)
+            seed_locations(connection, utc_now())
+            migrate_product_contexts(connection)
             total = connection.execute("SELECT COUNT(*) AS total FROM shopping_lists").fetchone()["total"]
             if total == 0:
                 now = utc_now()
@@ -162,6 +165,7 @@ class ShoppingService:
             "suggestions": self.suggestions(),
             "product_count": self.product_count(active_only=True),
             "today": today,
+            "locations": self.location_counts(),
         }
 
     def product_count(self, active_only: bool = True) -> int:
@@ -195,22 +199,31 @@ class ShoppingService:
             clauses.append("(name LIKE ? OR category LIKE ? OR subcategory LIKE ?)")
             params.extend([like, like, like])
 
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        sql = f"""
-            SELECT *
-            FROM products
-            {where}
-            ORDER BY
-                CASE category
-                    {' '.join(f"WHEN ? THEN {index}" for index, _ in enumerate(CATEGORY_ORDER))}
-                    ELSE {len(CATEGORY_ORDER)}
-                END,
-                name COLLATE NOCASE ASC
-        """
-        params = [*params, *CATEGORY_ORDER]
         with self.database.connect() as connection:
+            scoped_ids = self._product_ids_for_context(connection, query)
+            if scoped_ids is not None:
+                if not scoped_ids:
+                    return []
+                placeholders = ",".join("?" * len(scoped_ids))
+                clauses.append(f"id IN ({placeholders})")
+                params.extend(scoped_ids)
+
+            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+            sql = f"""
+                SELECT *
+                FROM products
+                {where}
+                ORDER BY
+                    CASE category
+                        {' '.join(f"WHEN ? THEN {index}" for index, _ in enumerate(CATEGORY_ORDER))}
+                        ELSE {len(CATEGORY_ORDER)}
+                    END,
+                    name COLLATE NOCASE ASC
+            """
+            params = [*params, *CATEGORY_ORDER]
             rows = connection.execute(sql, params).fetchall()
-        return [self._serialize_product(row) for row in rows]
+            products = [self._serialize_product(row) for row in rows]
+            return attach_product_contexts(connection, products)
 
     def create_product(self, payload: dict[str, Any]) -> dict[str, Any]:
         data = self._coerce_product(payload)
@@ -227,6 +240,7 @@ class ShoppingService:
                     )
             else:
                 product_id = self._insert_product(connection, data)
+            self._sync_product_types(connection, product_id, payload, replace=False)
         product = self.get_product(product_id)
         product["_created"] = created
         return product
@@ -234,9 +248,9 @@ class ShoppingService:
     def get_product(self, product_id: int) -> dict[str, Any]:
         with self.database.connect() as connection:
             row = connection.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
-        if row is None:
-            raise KeyError("Product not found")
-        return self._serialize_product(row)
+            if row is None:
+                raise KeyError("Product not found")
+            return attach_product_contexts(connection, [self._serialize_product(row)])[0]
 
     def update_product(self, product_id: int, payload: dict[str, Any]) -> dict[str, Any]:
         current = self.get_product(product_id)
@@ -271,6 +285,7 @@ class ShoppingService:
                     product_id,
                 ),
             )
+            self._sync_product_types(connection, product_id, payload, replace=True)
         return self.get_product(product_id)
 
     def deactivate_product(self, product_id: int) -> dict[str, Any]:
@@ -549,6 +564,276 @@ class ShoppingService:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def location_counts(self) -> dict[str, int]:
+        with self.database.connect() as connection:
+            types = connection.execute(
+                "SELECT COUNT(*) AS total FROM commerce_types WHERE is_active = 1"
+            ).fetchone()["total"]
+            stores = connection.execute(
+                "SELECT COUNT(*) AS total FROM stores WHERE is_active = 1"
+            ).fetchone()["total"]
+        return {"commerce_type_count": int(types), "store_count": int(stores)}
+
+    def list_commerce_types(self, query: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
+        query = query or {}
+        active_raw = (query.get("active") or ["1"])[0].strip().lower()
+        clauses = []
+        if active_raw not in {"all", "*", ""}:
+            clauses.append("is_active = 0" if active_raw in {"0", "false", "inactive"} else "is_active = 1")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                f"SELECT * FROM commerce_types {where} ORDER BY position ASC, name COLLATE NOCASE ASC"
+            ).fetchall()
+        return [self._serialize_flag_row(row) for row in rows]
+
+    def create_commerce_type(self, payload: dict[str, Any]) -> dict[str, Any]:
+        name = normalize_name(payload.get("name", ""))
+        if not name:
+            raise ValueError("O nome do tipo de comércio é obrigatório")
+        slug = slugify(payload.get("slug") or name)
+        now = utc_now()
+        with self.database.connect() as connection:
+            existing = connection.execute("SELECT * FROM commerce_types WHERE slug = ?", (slug,)).fetchone()
+            if existing is not None:
+                return self._serialize_flag_row(existing)
+            position = connection.execute(
+                "SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM commerce_types"
+            ).fetchone()["next_position"]
+            cursor = connection.execute(
+                """
+                INSERT INTO commerce_types (name, slug, description, icon, position, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+                """,
+                (
+                    name,
+                    slug,
+                    (payload.get("description") or "").strip(),
+                    (payload.get("icon") or "").strip(),
+                    int(payload.get("position") or position),
+                    now,
+                    now,
+                ),
+            )
+            type_id = cursor.lastrowid
+        return self.get_commerce_type(type_id)
+
+    def get_commerce_type(self, type_id: int) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute("SELECT * FROM commerce_types WHERE id = ?", (type_id,)).fetchone()
+        if row is None:
+            raise KeyError("Commerce type not found")
+        return self._serialize_flag_row(row)
+
+    def update_commerce_type(self, type_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.get_commerce_type(type_id)
+        name = normalize_name(payload.get("name", current["name"])) or current["name"]
+        now = utc_now()
+        is_active = current["is_active"] if "is_active" not in payload else bool(payload.get("is_active"))
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                UPDATE commerce_types
+                SET name = ?, description = ?, icon = ?, position = ?, is_active = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    name,
+                    (payload.get("description", current["description"]) or "").strip(),
+                    (payload.get("icon", current["icon"]) or "").strip(),
+                    int(payload.get("position", current["position"]) or 0),
+                    1 if is_active else 0,
+                    now,
+                    type_id,
+                ),
+            )
+        return self.get_commerce_type(type_id)
+
+    def deactivate_commerce_type(self, type_id: int) -> dict[str, Any]:
+        return self.update_commerce_type(type_id, {"is_active": False})
+
+    def list_stores(self, query: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
+        query = query or {}
+        search = (query.get("search") or [""])[0].strip()
+        type_raw = (query.get("commerce_type_id") or [""])[0].strip()
+        active_raw = (query.get("active") or ["1"])[0].strip().lower()
+        clauses = []
+        params: list[Any] = []
+        if active_raw not in {"all", "*", ""}:
+            clauses.append("s.is_active = 0" if active_raw in {"0", "false", "inactive"} else "s.is_active = 1")
+        if type_raw:
+            clauses.append("s.commerce_type_id = ?")
+            params.append(int(type_raw))
+        if search:
+            clauses.append("s.name LIKE ?")
+            params.append(f"%{search}%")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self.database.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT s.*, c.name AS commerce_type_name, c.slug AS commerce_type_slug
+                FROM stores s
+                JOIN commerce_types c ON c.id = s.commerce_type_id
+                {where}
+                ORDER BY c.position ASC, s.name COLLATE NOCASE ASC
+                """,
+                params,
+            ).fetchall()
+        return [self._serialize_store(row) for row in rows]
+
+    def create_store(self, payload: dict[str, Any]) -> dict[str, Any]:
+        name = normalize_name(payload.get("name", ""))
+        if not name:
+            raise ValueError("O nome da loja é obrigatório")
+        type_id = int(payload.get("commerce_type_id") or 0)
+        self.get_commerce_type(type_id)
+        slug = slugify(payload.get("slug") or name)
+        now = utc_now()
+        with self.database.connect() as connection:
+            existing = connection.execute("SELECT id FROM stores WHERE slug = ?", (slug,)).fetchone()
+            if existing is not None:
+                return self.get_store(int(existing["id"]))
+            cursor = connection.execute(
+                """
+                INSERT INTO stores (name, commerce_type_id, slug, notes, is_active, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 1, ?, ?)
+                """,
+                (name, type_id, slug, (payload.get("notes") or "").strip(), now, now),
+            )
+            store_id = cursor.lastrowid
+        return self.get_store(store_id)
+
+    def get_store(self, store_id: int) -> dict[str, Any]:
+        with self.database.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT s.*, c.name AS commerce_type_name, c.slug AS commerce_type_slug
+                FROM stores s
+                JOIN commerce_types c ON c.id = s.commerce_type_id
+                WHERE s.id = ?
+                """,
+                (store_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError("Store not found")
+        return self._serialize_store(row)
+
+    def update_store(self, store_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        current = self.get_store(store_id)
+        name = normalize_name(payload.get("name", current["name"])) or current["name"]
+        type_id = int(payload.get("commerce_type_id", current["commerce_type_id"]))
+        self.get_commerce_type(type_id)
+        is_active = current["is_active"] if "is_active" not in payload else bool(payload.get("is_active"))
+        now = utc_now()
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                UPDATE stores
+                SET name = ?, commerce_type_id = ?, notes = ?, is_active = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (name, type_id, (payload.get("notes", current["notes"]) or "").strip(), 1 if is_active else 0, now, store_id),
+            )
+        return self.get_store(store_id)
+
+    def deactivate_store(self, store_id: int) -> dict[str, Any]:
+        return self.update_store(store_id, {"is_active": False})
+
+    def add_product_commerce_type(self, product_id: int, type_id: int) -> dict[str, Any]:
+        self.get_product(product_id)
+        self.get_commerce_type(type_id)
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO product_commerce_types (product_id, commerce_type_id, priority)
+                VALUES (?, ?, 0)
+                """,
+                (product_id, type_id),
+            )
+        return self.get_product(product_id)
+
+    def remove_product_commerce_type(self, product_id: int, type_id: int) -> dict[str, Any]:
+        self.get_product(product_id)
+        with self.database.connect() as connection:
+            connection.execute(
+                "DELETE FROM product_commerce_types WHERE product_id = ? AND commerce_type_id = ?",
+                (product_id, type_id),
+            )
+        return self.get_product(product_id)
+
+    def add_product_store(self, product_id: int, store_id: int) -> dict[str, Any]:
+        self.get_product(product_id)
+        self.get_store(store_id)
+        with self.database.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO product_stores (product_id, store_id, priority)
+                VALUES (?, ?, 0)
+                """,
+                (product_id, store_id),
+            )
+        return self.get_product(product_id)
+
+    def remove_product_store(self, product_id: int, store_id: int) -> dict[str, Any]:
+        self.get_product(product_id)
+        with self.database.connect() as connection:
+            connection.execute(
+                "DELETE FROM product_stores WHERE product_id = ? AND store_id = ?",
+                (product_id, store_id),
+            )
+        return self.get_product(product_id)
+
+    def _product_ids_for_context(self, connection, query: dict[str, list[str]]) -> list[int] | None:
+        store_raw = (query.get("store_id") or [""])[0].strip()
+        type_raw = (query.get("commerce_type_id") or [""])[0].strip()
+        if store_raw:
+            store_id = int(store_raw)
+            store = connection.execute("SELECT * FROM stores WHERE id = ?", (store_id,)).fetchone()
+            if store is None:
+                return []
+            rows = connection.execute(
+                """
+                SELECT product_id FROM product_stores WHERE store_id = ?
+                UNION
+                SELECT product_id FROM product_commerce_types WHERE commerce_type_id = ?
+                """,
+                (store_id, store["commerce_type_id"]),
+            ).fetchall()
+            return [int(row["product_id"]) for row in rows]
+        if type_raw:
+            type_id = int(type_raw)
+            rows = connection.execute(
+                "SELECT product_id FROM product_commerce_types WHERE commerce_type_id = ?",
+                (type_id,),
+            ).fetchall()
+            return [int(row["product_id"]) for row in rows]
+        return None
+
+    def _sync_product_types(self, connection, product_id: int, payload: dict[str, Any], replace: bool) -> None:
+        if "commerce_type_ids" not in payload:
+            return
+        raw_ids = payload.get("commerce_type_ids") or []
+        type_ids: list[int] = []
+        for value in raw_ids:
+            try:
+                type_ids.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        type_ids = list(dict.fromkeys(type_ids))
+        if replace:
+            connection.execute("DELETE FROM product_commerce_types WHERE product_id = ?", (product_id,))
+        for type_id in type_ids:
+            exists = connection.execute("SELECT id FROM commerce_types WHERE id = ?", (type_id,)).fetchone()
+            if exists is None:
+                continue
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO product_commerce_types (product_id, commerce_type_id, priority)
+                VALUES (?, ?, 0)
+                """,
+                (product_id, type_id),
+            )
+
     def _migrate_catalog(self, connection, templates: list[dict]) -> None:
         if _table_exists(connection, "item_templates"):
             templates_rows = connection.execute(
@@ -824,6 +1109,15 @@ class ShoppingService:
     def _serialize_product(self, row) -> dict[str, Any]:
         data = dict(row)
         data["is_active"] = bool(data["is_active"])
+        return data
+
+    def _serialize_flag_row(self, row) -> dict[str, Any]:
+        data = dict(row)
+        data["is_active"] = bool(data["is_active"])
+        return data
+
+    def _serialize_store(self, row) -> dict[str, Any]:
+        data = self._serialize_flag_row(row)
         return data
 
     def _summarize_items(self, items: list[dict[str, Any]], budget: float) -> dict[str, Any]:

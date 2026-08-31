@@ -6,6 +6,9 @@ const shopState = {
   products: [],
   productCount: 0,
   today: null,
+  commerceTypes: [],
+  stores: [],
+  catalogContext: { kind: "all" },
 };
 
 const currency = new Intl.NumberFormat("pt-PT", {
@@ -69,6 +72,12 @@ function updateHomeHints() {
     const pending = stats.pending_count || 0;
     today.textContent = `${stats.item_count || 0} produtos · ${pending} por comprar`;
   }
+  const locations = document.getElementById("home-locations-hint");
+  if (locations && shopState.locations) {
+    const types = shopState.locations.commerce_type_count || 0;
+    const stores = shopState.locations.store_count || 0;
+    locations.textContent = `${types} tipos · ${stores} lojas`;
+  }
 }
 
 async function loadDashboard() {
@@ -78,6 +87,7 @@ async function loadDashboard() {
   shopState.activeListId = dashboard.active_list_id;
   shopState.productCount = dashboard.product_count || 0;
   shopState.today = dashboard.today;
+  shopState.locations = dashboard.locations;
   renderLists();
   renderSuggestions();
   updateHomeHints();
@@ -103,13 +113,65 @@ async function loadList(listId) {
   }
 }
 
+function catalogQuery() {
+  const ctx = shopState.catalogContext || { kind: "all" };
+  if (ctx.kind === "type" && ctx.id) return `?commerce_type_id=${ctx.id}`;
+  if (ctx.kind === "store" && ctx.id) return `?store_id=${ctx.id}`;
+  return "";
+}
+
 async function loadProducts() {
-  const payload = await api("/api/products");
+  const payload = await api(`/api/products${catalogQuery()}`);
   shopState.products = payload.products;
-  shopState.productCount = payload.products.length;
   updateHomeHints();
   if (window.ShoppingCatalog) {
     window.ShoppingCatalog.render();
+  }
+}
+
+async function loadLocations() {
+  const [types, stores] = await Promise.all([
+    api("/api/commerce-types?active=all"),
+    api("/api/stores?active=all"),
+  ]);
+  shopState.commerceTypes = types.commerce_types;
+  shopState.stores = stores.stores;
+  if (window.ShoppingLocations) {
+    window.ShoppingLocations.render();
+  }
+  if (window.ShoppingCatalog) {
+    window.ShoppingCatalog.renderTypes();
+  }
+}
+
+function setCatalogContext(context) {
+  shopState.catalogContext = context || { kind: "all" };
+}
+
+function applyGeneralHeader() {
+  if (window.ShoppingNav.state.currentScreen !== "general") return;
+  const ctx = shopState.catalogContext || { kind: "all" };
+  const title = document.getElementById("screen-title");
+  const subtitle = document.getElementById("screen-subtitle");
+  const back = document.getElementById("header-back");
+  if (ctx.kind === "store") {
+    title.textContent = ctx.name;
+    subtitle.textContent = ctx.typeName || "Loja";
+    subtitle.hidden = false;
+    back.hidden = false;
+    back.dataset.navigate = "locations";
+  } else if (ctx.kind === "type") {
+    title.textContent = "Lista Geral";
+    subtitle.textContent = ctx.name;
+    subtitle.hidden = false;
+    back.hidden = false;
+    back.dataset.navigate = "locations";
+  } else {
+    title.textContent = "Lista Geral";
+    subtitle.textContent = "Todos os produtos do utilizador";
+    subtitle.hidden = false;
+    back.hidden = true;
+    delete back.dataset.navigate;
   }
 }
 
@@ -343,22 +405,32 @@ window.ShoppingApp = {
   CATEGORY_ORDER,
   selectedProductIds,
   loadProducts,
+  loadLocations,
   loadDashboard,
   refreshActiveList,
   toggleProductOnToday,
   updateHomeHints,
+  setCatalogContext,
+  applyGeneralHeader,
 };
 
 window.ShoppingTheme.initTheme();
 window.ShoppingNav.initNavigation();
 window.ShoppingNav.onScreen = (screenId) => {
-  if (screenId === "general" || screenId === "home") {
+  if (screenId === "general") {
+    applyGeneralHeader();
     window.ShoppingCatalog?.render();
+  }
+  if (screenId === "home") {
     updateHomeHints();
+  }
+  if (screenId === "locations" || screenId === "manage-locations") {
+    window.ShoppingLocations?.render();
   }
 };
 
 loadDashboard()
+  .then(loadLocations)
   .then(loadProducts)
   .then(setupForms)
   .catch((error) => {

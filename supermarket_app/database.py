@@ -82,6 +82,48 @@ class Database:
 
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_products_name_nocase
                     ON products(name COLLATE NOCASE);
+
+                CREATE TABLE IF NOT EXISTS commerce_types (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    slug TEXT NOT NULL UNIQUE,
+                    description TEXT NOT NULL DEFAULT '',
+                    icon TEXT NOT NULL DEFAULT '',
+                    position INTEGER NOT NULL DEFAULT 0,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS stores (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    commerce_type_id INTEGER NOT NULL,
+                    slug TEXT NOT NULL UNIQUE,
+                    notes TEXT NOT NULL DEFAULT '',
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (commerce_type_id) REFERENCES commerce_types(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS product_commerce_types (
+                    product_id INTEGER NOT NULL,
+                    commerce_type_id INTEGER NOT NULL,
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (product_id, commerce_type_id),
+                    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                    FOREIGN KEY (commerce_type_id) REFERENCES commerce_types(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS product_stores (
+                    product_id INTEGER NOT NULL,
+                    store_id INTEGER NOT NULL,
+                    priority INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (product_id, store_id),
+                    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+                    FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
+                );
                 """
             )
             self._ensure_column(connection, "shopping_items", "product_id", "INTEGER")

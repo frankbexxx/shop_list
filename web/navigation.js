@@ -53,6 +53,12 @@ const SCREENS = {
     tab: "more",
     back: "more",
   },
+  "manage-locations": {
+    title: "Gerir locais",
+    subtitle: "Tipos de comércio e marcas",
+    tab: "more",
+    back: "more",
+  },
 };
 
 const navState = {
