@@ -879,6 +879,89 @@ dialog::backdrop {
   line-height: 1.5;
 }
 
+.oxs-mark-light {
+  display: none;
+}
+
+.oxs-mark-dark {
+  display: block;
+}
+
+html[data-theme="classic"] .oxs-mark-light,
+.app-shell[data-theme="classic"] .oxs-mark-light {
+  display: block;
+}
+
+html[data-theme="classic"] .oxs-mark-dark,
+.app-shell[data-theme="classic"] .oxs-mark-dark {
+  display: none;
+}
+
+.oxs-signature {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: var(--space-xl) 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+}
+
+.oxs-signature img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.oxs-about {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--space-lg);
+  padding: 20px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.oxs-about img {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 8px;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.oxs-about p {
+  margin: 0;
+}
+
+.oxs-about-name,
+.oxs-about-brand {
+  color: var(--color-text);
+  font-weight: 800;
+}
+
+.oxs-about-name {
+  font-size: 1.05rem;
+}
+
+.oxs-about-label {
+  margin-top: 8px;
+}
+
+.oxs-about-refs {
+  margin-top: 10px;
+  font-size: 0.78rem;
+}
+
 @media (min-width: 768px) {
   .stats-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
