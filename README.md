@@ -26,6 +26,14 @@ A app arranca por omissão em `http://127.0.0.1:8000`.
 python -m unittest discover -s tests -v
 ```
 
+## OXS
+
+This project is developed under **OXS — Oeiras Xtreme Software**.
+
+OXS identifies software and related projects created by Francisco Bexiga.
+
+See [TRADEMARKS.md](TRADEMARKS.md) for the OXS brand usage policy and [NOTICE](NOTICE) for copyright and attribution information.
+
 ## License
 
 This project is released under the OXS Non-Commercial Source License v1.0.
