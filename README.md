@@ -26,6 +26,12 @@ A app arranca por omissão em `http://127.0.0.1:8000`.
 python -m unittest discover -s tests -v
 ```
 
+## Branding
+
+Official OXS brand assets for this project are stored under [`assets/branding/`](assets/branding/).
+
+Brand usage guidance is available in [`docs/OXS_BRAND_GUIDE.md`](docs/OXS_BRAND_GUIDE.md).
+
 ## OXS
 
 This project is developed under **OXS — Oeiras Xtreme Software**.
