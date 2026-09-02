@@ -25,3 +25,16 @@ A app arranca por omissão em `http://127.0.0.1:8000`.
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+## License
+
+This project is released under the OXS Non-Commercial Source License v1.0.
+
+Source code is available for personal, educational, research, evaluation and other non-commercial use subject to the terms of the license.
+
+Commercial use, commercial redistribution, SaaS use, incorporation into commercial products or substantial use in business operations requires prior written permission from the copyright holder.
+
+Copyright © 2026 Francisco Bexiga
+OXS — Oeiras Xtreme Software
+
+See [LICENSE](LICENSE) for the full terms.
