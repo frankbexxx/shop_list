@@ -54,7 +54,7 @@ class WSGITestCase(unittest.TestCase):
     def test_root_serves_frontend(self):
         response = self.request("GET", "/")
         self.assertEqual(response["status"], "200 OK")
-        self.assertIn(b"Shopping List", response["body"])
+        self.assertIn(b"MarketFlow", response["body"])
         self.assertIn(b"app-shell", response["body"])
         self.assertIn(b"bottom-nav", response["body"])
 

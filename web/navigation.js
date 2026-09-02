@@ -1,6 +1,6 @@
 const SCREENS = {
   home: {
-    title: "Shopping List",
+    title: "MarketFlow",
     subtitle: "Listas rápidas para o supermercado",
     tab: "home",
     back: null,
@@ -55,7 +55,7 @@ const SCREENS = {
   },
   about: {
     title: "Sobre",
-    subtitle: "Shopping List",
+    subtitle: "MarketFlow",
     tab: "more",
     back: "more",
   },
